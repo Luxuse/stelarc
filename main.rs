@@ -225,6 +225,7 @@ impl MonCompresseurApp {
     }
 
     fn execute_command(&mut self, cmd: &mut Command, action: &str) {
+        println!("Commande exécutée : {:?}", cmd);
         self.log.push_str(&format!("Exécution de la commande : {:?}\n", cmd));
         match cmd.output() {
             Ok(output) => {
@@ -243,6 +244,10 @@ impl MonCompresseurApp {
     fn handle_action(&mut self) {
         self.log.clear();
         let exe = if cfg!(windows) { ".\\FreeArc\\bin\\arc.exe" } else { "./FreeArc/bin/arc" };
+
+        println!("Exécutable : {}", exe);
+        println!("Chemin de sortie : {}", self.output_path.display());
+        println!("Fichiers sélectionnés : {:?}", self.selected);
 
         if self.mode_compress {
             // Mode compression
@@ -417,12 +422,62 @@ impl App for MonCompresseurApp {
 }
 
 fn main() -> Result<(), eframe::Error> {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() > 1 {
+        match args[1].as_str() {
+            "--compress" => {
+                if args.len() > 2 {
+                    let path = &args[2];
+                    println!("Compression demandée pour : {}", path);
+
+                    // Exemple de logique de compression
+                    let output_path = format!("{}.arc", path);
+                    let mut cmd = Command::new(".\\FreeArc\\bin\\arc.exe");
+                    cmd.args(&["a", &output_path, path]);
+
+                    match cmd.output() {
+                        Ok(output) => {
+                            if output.status.success() {
+                                println!("Compression réussie : {}", output_path);
+                            } else {
+                                eprintln!(
+                                    "Erreur lors de la compression : {}",
+                                    String::from_utf8_lossy(&output.stderr)
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Erreur lors de l'exécution de la commande : {}", e);
+                        }
+                    }
+                } else {
+                    eprintln!("Erreur : Aucun chemin fourni pour la compression.");
+                }
+            }
+            "--extract" => {
+                if args.len() > 2 {
+                    let path = &args[2];
+                    println!("Extraction demandée pour : {}", path);
+                    // Ajoutez ici la logique d'extraction
+                } else {
+                    eprintln!("Erreur : Aucun chemin fourni pour l'extraction.");
+                }
+            }
+            _ => {
+                eprintln!("Argument inconnu : {}", args[1]);
+            }
+        }
+        return Ok(());
+    }
+
+    // Lancer l'interface graphique si aucun argument n'est fourni
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1000.0, 700.0]),
         ..Default::default()
     };
     eframe::run_native(
-        "stelarc-v1.35-BETA",
+        "stelarc-v1.45-BETA",
         native_options,
         Box::new(|_creation_context| Ok(Box::new(MonCompresseurApp::default()))),
     )
