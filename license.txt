@@ -1,0 +1,25 @@
+Copyright (c) 2025 Luxuse
+
+Ce logiciel, développé et publié par Luxuse, est mis à disposition selon les conditions suivantes :
+
+1. **Droits d'utilisation**
+   Vous êtes autorisé à utiliser, copier, modifier, et distribuer ce logiciel gratuitement pour un usage personnel, éducatif, expérimental ou non commercial.
+
+2. **Utilisation commerciale**
+   Toute utilisation de ce logiciel à des fins commerciales ou lucratives est strictement interdite sans l'obtention préalable d'une autorisation écrite explicite de l’auteur (Luxuse). Cela inclut, sans s'y limiter, la vente, la location, l'incorporation dans un produit payant ou toute forme de monétisation directe ou indirecte.
+
+3. **Propriété intellectuelle**
+   Ce logiciel reste la propriété intellectuelle de son auteur. Aucun droit de propriété n'est transféré par la présente licence. Toute copie ou distribution doit conserver cette notice de licence dans son intégralité.
+
+4. **Limitation de responsabilité**
+   Ce logiciel est fourni "tel quel", sans garantie d’aucune sorte, explicite ou implicite, y compris mais sans s’y limiter aux garanties de qualité marchande, d’adéquation à un usage particulier, ou d’absence de défauts. L’auteur ne pourra en aucun cas être tenu responsable de tout dommage direct ou indirect résultant de l’utilisation, de la mauvaise utilisation, ou de l’impossibilité d’utiliser ce logiciel. Cela inclut, mais ne se limite pas, à toute perte de données, corruption de fichiers, interruption de service ou toute autre conséquence dommageable.
+
+5. **Modifications et contributions**
+   Vous pouvez apporter des modifications au code source pour un usage personnel ou non commercial. Si vous redistribuez une version modifiée, vous devez clairement indiquer les changements effectués, ainsi que maintenir cette licence intacte, y compris l’attribution à Luxuse.
+
+6. **Acceptation**
+   En utilisant ce logiciel, vous reconnaissez avoir lu, compris et accepté les termes de cette licence.
+
+Pour toute demande d’utilisation commerciale ou autre question, veuillez contacter l’auteur à l’adresse de contact fournie avec le projet (le cas échéant).
+
+Fait par Luxuse – 2025.
