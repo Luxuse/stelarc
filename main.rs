@@ -64,8 +64,8 @@ impl CompressionPreset {
             CompressionPreset::NormalPrecomplzma => "Normal+precomp+lzma (-m4 -mc:lzma/lzma:max:32mb -mc$default,$obj:+precomp)",
             CompressionPreset::Best => "Best        (-m5)",
             CompressionPreset::Maximum => "Maximum       (-m9d)",
-            CompressionPreset::Fastlolz => "fastlolz (-m4d -s; -mc:lzma/lzma:max:64mb -mc$default,$obj:+precomp -m=lolz:mtt0:mt6:d4m)",
-           CompressionPreset::HighLOLZ => "HighLOLZ (-m4d -s; -mc:lzma/lzma:max:192mb  -mc$default,$obj:+precomp -m=lolz:mtt0:mt6:d64m)",
+            CompressionPreset::Fastlolz => "fastlolz (-m4d -s; -mc:lzma/lzma:max:64mb -mc$default,$obj:+precomp -m=lolz:mtt1:mt6:d4m)",
+           CompressionPreset::HighLOLZ => "HighLOLZ (-m4d -s; -mc:lzma/lzma:max:192mb  -mc$default,$obj:+precomp -m=lolz:mtt4:mt6:d64m)",
         }
     }
 
@@ -79,8 +79,8 @@ impl CompressionPreset {
             CompressionPreset::NormalPrecomplzma => vec!["-m4", "-mc:lzma/lzma:max:32mb", "-mc$default,$obj:+precomp"],
             CompressionPreset::Best => vec!["-m5"],
             CompressionPreset::Maximum => vec!["-m9d"],
-            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb","-mc$default,$obj:+precomp", "-m=lolz:mtt0:mt6:d4m"],
-            CompressionPreset::HighLOLZ => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:192mb", "-mc$default,$obj:+precomp", "-m=lolz:mtt0:mt6:d64m"],
+            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb", "-mc$default,$obj:+precomp", "-m=lolz:mtt1:mt6:d8m"],
+            CompressionPreset::HighLOLZ => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:192mb", "-mc$default,$obj:+precomp", "-m=lolz:mtt4:mt6:d64m"],
         }
     }
 }
