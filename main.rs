@@ -5,6 +5,10 @@ use std::process::Command;
 use std::path::PathBuf;
 use std::fs;
 use rfd;
+use std::sync::mpsc;
+use std::thread;
+use std::io::BufRead; // Ajout de l'import manquant
+use std::time::Duration;
 
 /// Application de compression/extraction inspirée de WinRAR/7-Zip
 struct MonCompresseurApp {
@@ -16,7 +20,6 @@ struct MonCompresseurApp {
     preset: CompressionPreset, // Selected compression preset
     output_path: PathBuf, // Path for the output archive or extraction destination (when in extract mode, this is the archive to extract)
     log: String, // Log area content
-    drives: Vec<PathBuf>, // List of system drives (Windows specific)
 }
 
 /// Presets disponibles pour FreeArc, incluant des modes variés
@@ -25,21 +28,29 @@ enum CompressionPreset {
     Instant,
     HDDspeed,
     Fastest,
+    FastSrepLZ,
     NormalPrecomplzma,
     Normal,
     Best,
+    Fastlolz,
+    Maximum,
+    HighLOLZ,
 }
 
 impl CompressionPreset {
     fn all() -> &'static [CompressionPreset] {
-        static ALL: [CompressionPreset; 6] = [
+        static ALL: [CompressionPreset; 10] = [
             CompressionPreset::Instant,
             CompressionPreset::HDDspeed,
             CompressionPreset::Fastest,
+            CompressionPreset::FastSrepLZ,
             CompressionPreset::NormalPrecomplzma,
             CompressionPreset::Normal,
             CompressionPreset::Best,
-        ];
+            CompressionPreset::Maximum,
+            CompressionPreset::Fastlolz,
+            CompressionPreset::HighLOLZ,
+            ];
         &ALL
     }
 
@@ -48,20 +59,13 @@ impl CompressionPreset {
             CompressionPreset::Instant => "Instant     (-m1)",
             CompressionPreset::HDDspeed => "HDD speed   (-m2)",
             CompressionPreset::Fastest => "Fastest     (-m3)",
+            CompressionPreset::FastSrepLZ => "Fast+Srep+LZ  (-m3d -s; -mc:lzma/lzma:max:8mb -mc:rep/maxsrep -mc$default,$obj:+precomp)",
             CompressionPreset::Normal => "Normal      (-m4)",
             CompressionPreset::NormalPrecomplzma => "Normal+precomp+lzma (-m4 -mc:lzma/lzma:max:32mb -mc$default,$obj:+precomp)",
             CompressionPreset::Best => "Best        (-m5)",
-        }
-    }
-
-    fn flag(&self) -> &'static str {
-        match self {
-            CompressionPreset::Instant => "-m1",
-            CompressionPreset::HDDspeed => "-m2",
-            CompressionPreset::Fastest => "-m3",
-            CompressionPreset::Normal => "-m4",
-            CompressionPreset::NormalPrecomplzma => "-m4 -mc:lzma/lzma:max:32mb -mc$default,$obj:+precomp",
-            CompressionPreset::Best => "-m5",
+            CompressionPreset::Maximum => "Maximum       (-m9d)",
+            CompressionPreset::Fastlolz => "fastlolz (-m4d -s; -mc:lzma/lzma:max:64mb -mc$default,$obj:+precomp -m=lolz:mtt0:mt6:d4m)",
+           CompressionPreset::HighLOLZ => "HighLOLZ (-m4d -s; -mc:lzma/lzma:max:192mb  -mc$default,$obj:+precomp -m=lolz:mtt0:mt6:d64m)",
         }
     }
 
@@ -70,35 +74,20 @@ impl CompressionPreset {
             CompressionPreset::Instant => vec!["-m1"],
             CompressionPreset::HDDspeed => vec!["-m2"],
             CompressionPreset::Fastest => vec!["-m3"],
+            CompressionPreset::FastSrepLZ => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp"],
             CompressionPreset::Normal => vec!["-m4"],
             CompressionPreset::NormalPrecomplzma => vec!["-m4", "-mc:lzma/lzma:max:32mb", "-mc$default,$obj:+precomp"],
             CompressionPreset::Best => vec!["-m5"],
+            CompressionPreset::Maximum => vec!["-m9d"],
+            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb","-mc$default,$obj:+precomp", "-m=lolz:mtt0:mt6:d4m"],
+            CompressionPreset::HighLOLZ => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:192mb", "-mc$default,$obj:+precomp", "-m=lolz:mtt0:mt6:d64m"],
         }
     }
 }
 
 impl Default for MonCompresseurApp {
     fn default() -> Self {
-        let drives = if cfg!(target_os = "windows") {
-            ('A'..='Z')
-                .filter_map(|c| {
-                    let d = format!("{}:/", c);
-                    let pb = PathBuf::from(&d);
-                    if pb.exists() && fs::metadata(&pb).map_or(false, |m| m.is_dir()) {
-                        Some(pb)
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        } else {
-            vec![PathBuf::from("/")]
-        };
-
-        let cwd = std::env::current_dir().unwrap_or_else(|_| {
-            drives.get(0).cloned().unwrap_or_else(|| PathBuf::from("."))
-        });
-
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let initial_output_path = if cwd.is_dir() {
             cwd.join("archive.arc")
         } else {
@@ -114,7 +103,6 @@ impl Default for MonCompresseurApp {
             preset: CompressionPreset::Normal,
             output_path: initial_output_path,
             log: String::new(),
-            drives,
         }
     }
 }
@@ -224,30 +212,69 @@ impl MonCompresseurApp {
         }
     }
 
-    fn execute_command(&mut self, cmd: &mut Command, action: &str) {
+    fn execute_command(&mut self, mut cmd: Command, action: &str, ctx: &egui::Context) {
         println!("Commande exécutée : {:?}", cmd);
         self.log.push_str(&format!("Exécution de la commande : {:?}\n", cmd));
-        match cmd.output() {
-            Ok(output) => {
-                if output.status.success() {
-                    self.log.push_str(&format!("{} réussie !\n{}", action, String::from_utf8_lossy(&output.stdout)));
-                } else {
-                    self.log.push_str(&format!("Erreur lors de {} :\n{}", action, String::from_utf8_lossy(&output.stderr)));
+
+        let action = action.to_string();
+        let ctx_clone = ctx.clone();
+
+        thread::spawn(move || {
+            cmd.stdout(std::process::Stdio::piped())
+               .stderr(std::process::Stdio::piped());
+
+            match cmd.spawn() {
+                Ok(mut child) => {
+                    let stdout = child.stdout.take().unwrap();
+                    let stderr = child.stderr.take().unwrap();
+
+                    let stdout_reader = std::io::BufReader::new(stdout);
+                    let stderr_reader = std::io::BufReader::new(stderr);
+
+                    // Lire stdout
+                    for line in stdout_reader.lines() {
+                        if let Ok(line) = line {
+                            println!("{}", line); // Afficher dans la console
+                            ctx_clone.request_repaint(); // Repeindre l'interface
+                        }
+                    }
+
+                    // Lire stderr
+                    for line in stderr_reader.lines() {
+                        if let Ok(line) = line {
+                            eprintln!("{}", line); // Afficher les erreurs dans la console
+                            ctx_clone.request_repaint(); // Repeindre l'interface
+                        }
+                    }
+
+                    match child.wait() {
+                        Ok(status) => {
+                            if status.success() {
+                                println!("{} terminée avec succès", action);
+                            } else {
+                                eprintln!("Erreur lors de {} (code: {:?})", action, status.code());
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Erreur lors de l'attente du processus : {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Erreur lors du lancement de la commande : {}", e);
                 }
             }
-            Err(e) => {
-                self.log.push_str(&format!("Erreur lors de l'exécution de la commande : {}\n", e));
-            }
-        }
+        });
     }
 
-    fn handle_action(&mut self) {
+    fn handle_action(&mut self, ctx: &egui::Context) {
         self.log.clear();
         let exe = if cfg!(windows) { ".\\FreeArc\\bin\\arc.exe" } else { "./FreeArc/bin/arc" };
 
-        println!("Exécutable : {}", exe);
-        println!("Chemin de sortie : {}", self.output_path.display());
-        println!("Fichiers sélectionnés : {:?}", self.selected);
+        if !std::path::Path::new(exe).exists() {
+            self.log.push_str("Erreur : FreeArc n'est pas installé correctement\n");
+            return;
+        }
 
         if self.mode_compress {
             // Mode compression
@@ -259,6 +286,12 @@ impl MonCompresseurApp {
                 self.log.push_str("Erreur : Chemin de sortie invalide.\n");
                 return;
             }
+
+            self.log.push_str(&format!(
+                "Compression des fichiers : {:?}\nVers : {}\n",
+                self.selected,
+                self.output_path.display()
+            ));
 
             let mut cmd = Command::new(exe);
             cmd.arg("a");
@@ -273,7 +306,7 @@ impl MonCompresseurApp {
                 cmd.arg("-sfx");
             }
 
-            self.execute_command(&mut cmd, "la compression");
+            self.execute_command(cmd, "la compression", ctx);
         } else {
             // Mode extraction
             if self.selected.len() != 1 {
@@ -282,40 +315,28 @@ impl MonCompresseurApp {
             }
 
             let archive_to_extract = &self.selected[0];
-            if let Some(dest) = rfd::FileDialog::new().pick_folder() {
-                let mut cmd = Command::new(exe);
-                cmd.args(&["x", archive_to_extract.to_str().unwrap(), &format!("-dp{}", dest.display()), "-o+", "-y"]);
+            if !archive_to_extract.exists() {
+                self.log.push_str(&format!("Erreur : L'archive {} n'existe pas\n", archive_to_extract.display()));
+                return;
+            }
 
+            if let Some(dest) = rfd::FileDialog::new().set_title("Choisir le dossier d'extraction").pick_folder() {
                 self.log.push_str(&format!(
-                    "[EXTRACTION] Archive sélectionnée : {}\n",
-                    archive_to_extract.display()
+                    "Extraction de l'archive : {}\nVers : {}\n",
+                    archive_to_extract.display(),
+                    dest.display()
                 ));
-                self.log.push_str(&format!("Dossier de destination : {}\n", dest.display()));
-                self.log.push_str(&format!("Commande exécutée : {:?}\n", cmd));
 
-                match cmd.output() {
-                    Ok(output) => {
-                        if output.status.success() {
-                            self.log.push_str(&format!(
-                                "Extraction réussie pour l'archive : {}\n",
-                                archive_to_extract.display()
-                            ));
-                        } else {
-                            self.log.push_str(&format!(
-                                "Erreur lors de l'extraction :\n{}\n",
-                                String::from_utf8_lossy(&output.stderr)
-                            ));
-                        }
-                    }
-                    Err(e) => {
-                        self.log.push_str(&format!(
-                            "Erreur lors de l'exécution de la commande : {}\n",
-                            e
-                        ));
-                    }
-                }
-            } else {
-                self.log.push_str("Extraction annulée : dossier de destination non sélectionné.\n");
+                let mut cmd = Command::new(exe);
+                cmd.args(&[
+                    "x",
+                    archive_to_extract.to_str().unwrap(),
+                    &format!("-dp{}", dest.display()),
+                    "-o+",
+                    "-y",
+                ]);
+
+                self.execute_command(cmd, "l'extraction", ctx);
             }
         }
     }
@@ -399,7 +420,7 @@ impl App for MonCompresseurApp {
 
                 // Bouton pour exécuter l'action principale
                 if ui.button("Exécuter").clicked() {
-                    self.handle_action();
+                    self.handle_action(ctx);
                 }
             });
         });
@@ -477,7 +498,7 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
     eframe::run_native(
-        "stelarc-v1.45-BETA",
+        "stelarc 0.3.45-beta",
         native_options,
         Box::new(|_creation_context| Ok(Box::new(MonCompresseurApp::default()))),
     )
