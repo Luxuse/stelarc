@@ -17,6 +17,7 @@
     - Compression rapide
     - Compression normale
     - Compression  avec précompression et LZMA
+    - Compression  avec précompression et lolz
 
 - **Extraction puissante** :
   - Gestion des archives complexes.
