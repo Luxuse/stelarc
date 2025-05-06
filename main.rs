@@ -1,16 +1,46 @@
 use eframe::egui;
-use eframe::App; // Import the App trait
-use egui::{RichText, Color32};
+use egui::{RichText, Color32, Shadow, Visuals, Frame};
 use std::process::Command;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::fs;
 use rfd;
-use std::sync::mpsc;
+use std::io::BufRead;
+use std::borrow::Cow;
 use std::thread;
-use std::io::BufRead; // Ajout de l'import manquant
-use std::time::Duration;
+use std::collections::HashMap;
 
 /// Application de compression/extraction inspirée de WinRAR/7-Zip
+struct CompressionStats {
+    original_size: u64,
+    compressed_size: u64,
+    compression_ratio: f32,
+    elapsed_time: std::time::Duration,
+}
+
+struct CompressionProgress {
+    total_bytes: u64,
+    processed_bytes: u64,
+    started_at: std::time::Instant,
+    estimated_remaining: Option<std::time::Duration>,
+}
+
+struct FileStats {
+    total_size: u64,
+    file_count: usize,
+    largest_file: (PathBuf, u64),
+    by_extension: HashMap<String, (usize, u64)>,  // (count, total_size)
+}
+
+#[derive(Clone, Debug)]  // Remove serde derives since Color32 doesn't implement them
+struct Theme {
+    name: String,
+    primary_color: Color32,
+    secondary_color: Color32,
+    background_color: Color32,
+    text_color: Color32,
+    accent_color: Color32,
+}
+
 struct MonCompresseurApp {
     current_dir: PathBuf,
     history: Vec<PathBuf>, // Navigation history for the explorer
@@ -19,7 +49,12 @@ struct MonCompresseurApp {
     mode_compress: bool, // true for compress, false for extract
     preset: CompressionPreset, // Selected compression preset
     output_path: PathBuf, // Path for the output archive or extraction destination (when in extract mode, this is the archive to extract)
-    log: String, // Log area content
+    log: Cow<'static, str>, // Utilisation de Cow pour éviter des copies inutiles
+    stats: Option<CompressionStats>,
+    preview_file: Option<PathBuf>,
+    preview_content: String,
+    progress: Option<CompressionProgress>,
+    current_stats: Option<FileStats>,
 }
 
 /// Presets disponibles pour FreeArc, incluant des modes variés
@@ -27,6 +62,8 @@ struct MonCompresseurApp {
 enum CompressionPreset {
     Instant,
     HDDspeed,
+    UltrafastSREP,
+    Ultrafastlolz,
     Fastest,
     FastSrepLZ,
     NormalPrecomplzma,
@@ -39,9 +76,11 @@ enum CompressionPreset {
 
 impl CompressionPreset {
     fn all() -> &'static [CompressionPreset] {
-        static ALL: [CompressionPreset; 10] = [
+        static ALL: [CompressionPreset; 12] = [
             CompressionPreset::Instant,
             CompressionPreset::HDDspeed,
+            CompressionPreset::UltrafastSREP,
+            CompressionPreset::Ultrafastlolz,
             CompressionPreset::Fastest,
             CompressionPreset::FastSrepLZ,
             CompressionPreset::NormalPrecomplzma,
@@ -58,14 +97,16 @@ impl CompressionPreset {
         match self {
             CompressionPreset::Instant => "Instant     (-m1)",
             CompressionPreset::HDDspeed => "HDD speed   (-m2)",
+            CompressionPreset::UltrafastSREP => "UltrafastSREP   (-m3d -s; -mc:rep/maxsrep)",
+            CompressionPreset::Ultrafastlolz => "Ultrafastlolz     (-m3d -s; -m=lolz:mtt0:mt12:d2m)",
             CompressionPreset::Fastest => "Fastest     (-m3)",
             CompressionPreset::FastSrepLZ => "Fast+Srep+LZ  (-m3d -s; -mc:lzma/lzma:max:8mb -mc:rep/maxsrep -mc$default,$obj:+precomp)",
             CompressionPreset::Normal => "Normal      (-m4)",
             CompressionPreset::NormalPrecomplzma => "Normal+precomp+lzma (-m4 -mc:lzma/lzma:max:32mb -mc$default,$obj:+precomp)",
             CompressionPreset::Best => "Best        (-m5)",
             CompressionPreset::Maximum => "Maximum       (-m9d)",
-            CompressionPreset::Fastlolz => "fastlolz (-m4d -s; -mc:lzma/lzma:max:64mb -mc$default,$obj:+precomp -m=lolz:mtt1:mt6:d4m)",
-           CompressionPreset::HighLOLZ => "HighLOLZ (-m4d -s; -mc:lzma/lzma:max:192mb  -mc$default,$obj:+precomp -m=lolz:mtt4:mt6:d64m)",
+            CompressionPreset::Fastlolz => "fastlolz (-m4d -s; -mc:lzma/lzma:max:64mb -mc$default,$obj:+maxprecomp -m=lolz:mtt1:mt6:d8m)",
+            CompressionPreset::HighLOLZ => "HighLOLZ (-m4d -s; -mc:lzma/lzma:max:192mb -mc:rep/maxsrep -mc$default,$obj:+precomp -m=lolz:mtt0:mt6:d64m)",
         }
     }
 
@@ -73,14 +114,17 @@ impl CompressionPreset {
         match self {
             CompressionPreset::Instant => vec!["-m1"],
             CompressionPreset::HDDspeed => vec!["-m2"],
-            CompressionPreset::Fastest => vec!["-m3"],
+            CompressionPreset::Fastest => vec!["-m3"], 
+            CompressionPreset::UltrafastSREP => vec!["-m3d", "-s;", "-mc:rep/maxsrep"],
+            CompressionPreset::Ultrafastlolz => vec!["-m3d", "-s;", "-m=lolz:mtt0:mt12:d2m"],
             CompressionPreset::FastSrepLZ => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp"],
             CompressionPreset::Normal => vec!["-m4"],
             CompressionPreset::NormalPrecomplzma => vec!["-m4", "-mc:lzma/lzma:max:32mb", "-mc$default,$obj:+precomp"],
             CompressionPreset::Best => vec!["-m5"],
             CompressionPreset::Maximum => vec!["-m9d"],
-            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb", "-mc$default,$obj:+precomp", "-m=lolz:mtt1:mt6:d8m"],
-            CompressionPreset::HighLOLZ => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:192mb", "-mc$default,$obj:+precomp", "-m=lolz:mtt4:mt6:d64m"],
+            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb", "-mc$default,$obj:+maxprecomp", "-m=lolz:mtt1:mt6:d8m"],
+            CompressionPreset::HighLOLZ => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:192mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp", "-m=lolz:mtt0:mt6:d64m"],
+ 
         }
     }
 }
@@ -102,24 +146,33 @@ impl Default for MonCompresseurApp {
             mode_compress: true,
             preset: CompressionPreset::Normal,
             output_path: initial_output_path,
-            log: String::new(),
+            log: Cow::Borrowed(""),
+            stats: None,
+            preview_file: None,
+            preview_content: String::new(),
+            progress: None,
+            current_stats: None,
         }
     }
 }
 
 impl MonCompresseurApp {
-    fn navigate_to(&mut self, dir: PathBuf) {
+    fn navigate_to(&mut self, dir: &Path) {
         if dir.is_dir() {
             if self.history_index + 1 < self.history.len() {
                 self.history.truncate(self.history_index + 1);
             }
-            self.history.push(dir.clone());
+            self.history.push(dir.to_path_buf());
             self.history_index = self.history.len() - 1;
-            self.current_dir = dir;
+            self.current_dir = dir.to_path_buf();
             self.selected.clear();
-            self.log.push_str(&format!("Navigated to: {}\n", self.current_dir.display()));
+            // Sélectionner automatiquement le dossier pour la compression
+            if self.mode_compress {
+                self.selected.push(dir.to_path_buf());
+            }
+            self.log.to_mut().push_str(&format!("Navigated to: {}\n", dir.display()));
         } else {
-            self.log.push_str(&format!("Error: Cannot navigate to non-directory path: {}\n", dir.display()));
+            self.log.to_mut().push_str(&format!("Error: Cannot navigate to non-directory path: {}\n", dir.display()));
         }
     }
 
@@ -128,7 +181,7 @@ impl MonCompresseurApp {
             self.history_index -= 1;
             self.current_dir = self.history[self.history_index].clone();
             self.selected.clear();
-            self.log.push_str(&format!("Navigated back to: {}\n", self.current_dir.display()));
+            self.log.to_mut().push_str(&format!("Navigated back to: {}\n", self.current_dir.display()));
         }
     }
 
@@ -137,7 +190,7 @@ impl MonCompresseurApp {
             self.history_index += 1;
             self.current_dir = self.history[self.history_index].clone();
             self.selected.clear();
-            self.log.push_str(&format!("Navigated forward to: {}\n", self.current_dir.display()));
+            self.log.to_mut().push_str(&format!("Navigated forward to: {}\n", self.current_dir.display()));
         }
     }
 
@@ -153,7 +206,12 @@ impl MonCompresseurApp {
                 .on_hover_text("Double-clic: aller au dossier parent");
 
             if response.double_clicked() {
-                self.navigate_to(p);
+                self.navigate_to(&p);
+                // Sélectionner automatiquement le nouveau dossier pour la compression
+                if self.mode_compress {
+                    self.selected.clear();
+                    self.selected.push(p);
+                }
             }
             ui.label("Dossier");
             ui.end_row();
@@ -189,7 +247,7 @@ impl MonCompresseurApp {
 
                     if response.double_clicked() {
                         if p.is_dir() {
-                            self.navigate_to(p.clone());
+                            self.navigate_to(&p);
                         }
                     } else if response.clicked() {
                         if ui.ctx().input(|i| i.modifiers.ctrl) {
@@ -214,7 +272,7 @@ impl MonCompresseurApp {
 
     fn execute_command(&mut self, mut cmd: Command, action: &str, ctx: &egui::Context) {
         println!("Commande exécutée : {:?}", cmd);
-        self.log.push_str(&format!("Exécution de la commande : {:?}\n", cmd));
+        self.log.to_mut().push_str(&format!("Exécution de la commande : {:?}\n", cmd));
 
         let action = action.to_string();
         let ctx_clone = ctx.clone();
@@ -268,26 +326,26 @@ impl MonCompresseurApp {
     }
 
     fn handle_action(&mut self, ctx: &egui::Context) {
-        self.log.clear();
+        self.log.to_mut().clear();
         let exe = if cfg!(windows) { ".\\FreeArc\\bin\\arc.exe" } else { "./FreeArc/bin/arc" };
 
         if !std::path::Path::new(exe).exists() {
-            self.log.push_str("Erreur : FreeArc n'est pas installé correctement\n");
+            self.log.to_mut().push_str("Erreur : FreeArc n'est pas installé correctement\n");
             return;
         }
 
         if self.mode_compress {
             // Mode compression
             if self.selected.is_empty() {
-                self.log.push_str("Erreur : Aucune source sélectionnée pour la compression.\n");
+                self.log.to_mut().push_str("Erreur : Aucune source sélectionnée pour la compression.\n");
                 return;
             }
             if self.output_path.file_name().is_none() {
-                self.log.push_str("Erreur : Chemin de sortie invalide.\n");
+                self.log.to_mut().push_str("Erreur : Chemin de sortie invalide.\n");
                 return;
             }
 
-            self.log.push_str(&format!(
+            self.log.to_mut().push_str(&format!(
                 "Compression des fichiers : {:?}\nVers : {}\n",
                 self.selected,
                 self.output_path.display()
@@ -310,18 +368,18 @@ impl MonCompresseurApp {
         } else {
             // Mode extraction
             if self.selected.len() != 1 {
-                self.log.push_str("Erreur : Veuillez sélectionner une seule archive pour l'extraction.\n");
+                self.log.to_mut().push_str("Erreur : Veuillez sélectionner une seule archive pour l'extraction.\n");
                 return;
             }
 
             let archive_to_extract = &self.selected[0];
             if !archive_to_extract.exists() {
-                self.log.push_str(&format!("Erreur : L'archive {} n'existe pas\n", archive_to_extract.display()));
+                self.log.to_mut().push_str(&format!("Erreur : L'archive {} n'existe pas\n", archive_to_extract.display()));
                 return;
             }
 
             if let Some(dest) = rfd::FileDialog::new().set_title("Choisir le dossier d'extraction").pick_folder() {
-                self.log.push_str(&format!(
+                self.log.to_mut().push_str(&format!(
                     "Extraction de l'archive : {}\nVers : {}\n",
                     archive_to_extract.display(),
                     dest.display()
@@ -340,105 +398,308 @@ impl MonCompresseurApp {
             }
         }
     }
-}
 
-impl App for MonCompresseurApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                if ui.button("← Retour").clicked() {
-                    self.go_back();
-                }
-                if ui.add_enabled(self.history_index + 1 < self.history.len(), egui::Button::new("Avancer →")).clicked() {
-                    self.go_forward();
-                }
-                if ui.button("Haut ↑").clicked() {
-                    if let Some(parent) = self.current_dir.parent() {
-                        self.navigate_to(parent.to_path_buf());
-                    }
-                }
-                ui.separator();
+        // Modern theme configuration
+        let mut style = (*ctx.style()).clone();
+        style.spacing.item_spacing = egui::vec2(10.0, 10.0);
+        let mut visuals = Visuals::dark();
+        visuals.window_shadow = Shadow {
+            offset: [0, 4], // Use integer array for offset
+            blur: 8,        // Use integer for blur
+            spread: 2,      // Use integer for spread
+            color: Color32::from_black_alpha(96),
+        };
+        visuals.panel_fill = Color32::from_rgb(32, 33, 36);
+        visuals.window_fill = Color32::from_rgb(40, 41, 45);
+        style.visuals = visuals;
+        ctx.set_style(style);
 
-                // Réintégration de la sélection du mode de compression
-                ui.selectable_value(&mut self.mode_compress, true, "Compresser");
-                ui.selectable_value(&mut self.mode_compress, false, "Extraire");
-                ui.separator();
-
-                // Réintégration de la sélection des presets de compression
-                if self.mode_compress {
-                    ui.label("Preset :");
-                    egui::ComboBox::from_label("")
-                        .selected_text(self.preset.label())
-                        .show_ui(ui, |ui| {
-                            for p in CompressionPreset::all() {
-                                ui.selectable_value(&mut self.preset, p.clone(), p.label());
-                            }
-                        });
-                }
-                ui.separator();
-
-                // Bouton pour ajouter des fichiers/dossiers via une boîte de dialogue
-                if ui.button("Parcourir...").clicked() {
-                    if let Some(paths) = rfd::FileDialog::new().pick_folders() {
-                        for path in paths {
-                            if !self.selected.contains(&path) {
-                                self.selected.push(path);
-                            }
+        // Toolbar panel
+        egui::TopBottomPanel::top("main_toolbar")
+            .frame(Frame::default()
+                .fill(Color32::from_rgb(28, 29, 32))
+                .outer_margin(10.0)
+                .corner_radius(8.0)
+                .shadow(Shadow {
+                    offset: [0, 2],
+                    blur: 4,
+                    spread: 1,
+                    color: Color32::from_black_alpha(60),
+                }))
+            .show(ctx, |ui| {
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.horizontal(|ui| {
+                        if ui.add(egui::Button::new("← Retour")
+                            .fill(if self.history_index > 0 {Color32::from_rgb(66, 133, 244)} else {Color32::from_rgb(50, 51, 55)})
+                            .corner_radius(5.0))
+                            .clicked() && self.history_index > 0 { 
+                            self.go_back();
                         }
-                        self.log.push_str("Fichiers/dossiers ajoutés via la boîte de dialogue.\n");
-                    }
-                }
-                ui.separator();
+                            
+                        if ui.add(egui::Button::new("→")
+                            .fill(if self.history_index + 1 < self.history.len() {Color32::from_rgb(66, 133, 244)} else {Color32::from_rgb(50, 51, 55)})
+                            .corner_radius(5.0))
+                            .clicked() && self.history_index + 1 < self.history.len() { 
+                            self.go_forward();
+                        }
 
-                // Bouton pour sélectionner le chemin de sortie
-                if ui.button("Chemin de sortie...").clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .set_directory(&self.current_dir)
-                        .set_file_name(&*self.output_path.file_name().unwrap_or_default().to_string_lossy())
-                        .save_file()
-                    {
-                        self.output_path = path;
-                        self.log.push_str(&format!("Chemin de sortie sélectionné : {}\n", self.output_path.display()));
-                    }
-                }
-
-                // Liste déroulante pour choisir l'extension du fichier de sortie
-                let mut current_ext = self.output_path.extension().unwrap_or_default().to_string_lossy().into_owned();
-                egui::ComboBox::from_label("Extension")
-                    .selected_text(&current_ext)
-                    .show_ui(ui, |ui| {
-                        for ext in ["arc", "bin", "pak", "dat", "sfx"] {
-                            if ui.selectable_value(&mut current_ext, ext.to_string(), ext).clicked() {
-                                if let Some(stem) = self.output_path.file_stem() {
-                                    self.output_path = self.output_path.with_file_name(format!("{}.{}", stem.to_string_lossy(), ext));
-                                }
+                        if ui.add(egui::Button::new("↑")
+                            .fill(Color32::from_rgb(66, 133, 244))
+                            .corner_radius(5.0))
+                            .clicked() {
+                            if let Some(parent) = self.current_dir.parent() {
+                                self.navigate_to(&parent.to_path_buf());
                             }
                         }
                     });
+                    
+                    ui.add_space(20.0);
+                    
+                    // Modern mode selector
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.mode_compress, true, 
+                            RichText::new("📦 Compresser").size(16.0));
+                        ui.selectable_value(&mut self.mode_compress, false, 
+                            RichText::new("📂 Extraire").size(16.0));
+                    });
 
-                ui.separator();
+                    ui.add_space(20.0);
 
-                // Bouton pour exécuter l'action principale
-                if ui.button("Exécuter").clicked() {
-                    self.handle_action(ctx);
+                    // Modern preset selector
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Preset:").size(16.0));
+                        egui::ComboBox::new("preset_selector", "")
+                            .selected_text(RichText::new(self.preset.label()).size(16.0))
+                            .show_ui(ui, |ui| {
+                                for preset in CompressionPreset::all() {
+                                    ui.selectable_value(&mut self.preset, preset.clone(),
+                                        RichText::new(preset.label()).size(16.0));
+                                }
+                            });
+                    });
+
+                    ui.add_space(20.0);
+
+                    // Extension selector
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Extension:").size(16.0));
+                        let current_ext = self.output_path.extension()
+                            .and_then(|ext| ext.to_str())
+                            .unwrap_or("arc");
+                        let stem = self.output_path.file_stem()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let parent = self.output_path.parent().unwrap_or(Path::new(""));
+                        let mut new_ext: Option<&str> = None;  // Add type annotation
+                        
+                        egui::ComboBox::from_label("")
+                            .selected_text(format!(".{}", current_ext))
+                            .show_ui(ui, |ui| {
+                                for ext in ["arc", "bin", "pak", "dat", "sfx"] {
+                                    let selected = current_ext == ext;
+                                    if ui.selectable_label(selected, format!(".{}", ext)).clicked() && !selected {
+                                        new_ext = Some(ext);
+                                    }
+                                }
+                            });
+
+                        if let Some(ext) = new_ext {
+                            self.output_path = parent.join(format!("{}.{}", stem, ext));
+                        }
+                    });
+                });
+                ui.add_space(8.0);
+            });
+
+        // File explorer panel
+        egui::SidePanel::left("file_explorer")
+            .resizable(true)
+            .min_width(250.0)
+            .frame(Frame::default()
+                .fill(Color32::from_rgb(35, 36, 40))
+                .corner_radius(8.0)
+                .outer_margin(10.0)
+                .shadow(Shadow {
+                    offset: [2, 0],
+                    blur: 4,
+                    spread: 1,
+                    color: Color32::from_black_alpha(60),
+                }))
+            .show(ctx, |ui| {
+                ui.add_space(8.0);
+                ui.heading(RichText::new("📁 Explorateur").size(20.0).strong());
+                ui.add_space(4.0);
+                ui.label(RichText::new(format!("📍 {}", self.current_dir.display())).size(14.0));
+                ui.add_space(8.0);
+                
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false; 2])
+                    .show(ui, |ui| {
+                        self.show_directory(ui);
+                    });
+            });
+
+        // Central panel
+        egui::CentralPanel::default()
+            .frame(Frame::default()
+                .fill(Color32::from_rgb(35, 36, 40))
+                .corner_radius(8.0)
+                .outer_margin(10.0)
+                .shadow(Shadow {
+                    offset: [0, 2],
+                    blur: 4,
+                    spread: 1,
+                    color: Color32::from_black_alpha(60),
+                }))
+            .show(ctx, |ui| {
+                ui.add_space(8.0);
+                // Action buttons
+                ui.horizontal(|ui| {
+                    if ui.add(egui::Button::new(RichText::new("📂 Parcourir...").size(16.0))
+                        .fill(Color32::from_rgb(66, 133, 244))
+                        .min_size(egui::vec2(120.0, 32.0)))
+                        .clicked() {
+                        if let Some(dir) = rfd::FileDialog::new()
+                            .set_title("Sélectionner un dossier")
+                            .set_directory(&self.current_dir)
+                            .pick_folder() {
+                            self.current_dir = dir.clone();
+                            self.history.push(dir.clone());
+                            self.history_index = self.history.len() - 1;
+                            self.selected.clear();
+                            // Sélectionner automatiquement le dossier pour la compression
+                            self.selected.push(dir);
+                            self.log.to_mut().push_str(&format!("Dossier sélectionné : {}\n", self.current_dir.display()));
+                        }
+                    }
+                    
+                    if ui.add(egui::Button::new(RichText::new("💾 Destination...").size(16.0))
+                        .fill(Color32::from_rgb(66, 133, 244))
+                        .min_size(egui::vec2(120.0, 32.0)))
+                        .clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_title("Choisir la destination")
+                            .set_file_name(self.output_path.file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("archive.arc"))
+                            .save_file() {
+                            self.output_path = path;
+                        }
+                    }
+
+                    // Extension selector
+                    egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
+                        .selected_text(format!(".{}", self.output_path.extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("arc")))
+                        .show_ui(ui, |ui| {
+                            // ... existing extension logic ...
+                        });
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add(egui::Button::new(RichText::new("▶ Exécuter").size(16.0))
+                            .fill(Color32::from_rgb(52, 168, 83))
+                            .min_size(egui::vec2(120.0, 32.0)))
+                            .clicked() {
+                            self.handle_action(ctx);
+                        }
+                    });
+                });
+
+                ui.add_space(16.0);
+                
+                // Logs avec style moderne
+                ui.heading(RichText::new("📝 Logs").size(20.0).strong());
+                ui.add_space(8.0);
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false; 2])
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut self.log)
+                                .desired_rows(12)
+                                .desired_width(f32::INFINITY)
+                                .font(egui::TextStyle::Monospace)
+                                .interactive(false)
+                        );
+                    });
+
+                // Progress bar
+                self.show_progress(ui);
+            });
+
+        // Status bar
+        egui::TopBottomPanel::bottom("status_bar")
+            .frame(Frame::default()
+                .fill(Color32::from_rgb(28, 29, 32))
+                .corner_radius(8.0)
+                .outer_margin(10.0))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("⚡ Mode:").strong());
+                    ui.label(if self.mode_compress {"Compression"} else {"Extraction"});
+                    ui.separator();
+                    ui.label(RichText::new("📊 Sélection:").strong());
+                    ui.label(format!("{} fichier(s)", self.selected.len()));
+                });
+            });
+    }
+
+    fn show_preview(&mut self, ui: &mut egui::Ui) {
+        if let Some(path) = &self.preview_file {
+            if path.is_file() {
+                // Limiter la taille de prévisualisation
+                if let Ok(content) = fs::read_to_string(path) {
+                    ui.group(|ui| {
+                        ui.heading("Prévisualisation");
+                        ui.text_edit_multiline(&mut content.as_str());
+                    });
                 }
-            });
-        });
+            }
+        }
+    }
 
-        egui::SidePanel::left("explorer").resizable(true).show(ctx, |ui| {
-            ui.heading("Explorateur de fichiers");
-            ui.label(format!("Dossier actuel : {}", self.current_dir.display()));
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                self.show_directory(ui);
-            });
-        });
+    fn show_progress(&mut self, ui: &mut egui::Ui) {
+        if let Some(progress) = &self.progress {
+            let percentage = (progress.processed_bytes as f32 / progress.total_bytes as f32) * 100.0;
+            ui.add(egui::ProgressBar::new(percentage / 100.0)
+                .text(format!("{:.1}% - Temps restant estimé: {:?}", percentage, progress.estimated_remaining)));
+        }
+    }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Logs");
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.add(egui::TextEdit::multiline(&mut self.log).desired_rows(12).interactive(false));
-            });
-        });
+    fn update_stats(&mut self) {
+        let stats = FileStats { // Removed mut as it's not needed
+            total_size: 0,
+            file_count: 0,
+            largest_file: (PathBuf::new(), 0),
+            by_extension: HashMap::new(),
+        };
+
+        for _path in &self.selected { // Added underscore to unused variable
+            // Calculer les statistiques...
+        }
+
+        self.current_stats = Some(stats);
+    }
+
+    fn apply_theme(&self, ctx: &egui::Context, theme: &Theme) {
+        let mut style = (*ctx.style()).clone();
+        let mut visuals = style.visuals.clone();
+        
+        visuals.window_fill = theme.background_color;
+        visuals.panel_fill = theme.secondary_color;
+        visuals.widgets.noninteractive.fg_stroke.color = theme.text_color;
+        visuals.selection.bg_fill = theme.accent_color;
+        
+        style.visuals = visuals;
+        ctx.set_style(style);
+    }
+}
+
+impl eframe::App for MonCompresseurApp {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        self.update(ctx, frame);
     }
 }
 
@@ -492,13 +753,18 @@ fn main() -> Result<(), eframe::Error> {
         return Ok(());
     }
 
-    // Lancer l'interface graphique si aucun argument n'est fourni
+    // Updated window configuration
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1000.0, 700.0]),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1000.0, 700.0])
+            .with_min_inner_size([800.0, 600.0])
+            .with_decorations(true)
+            .with_transparent(false),
         ..Default::default()
     };
+
     eframe::run_native(
-        "stelarc 0.3.45-beta",
+        "stelarc 0.4.46-beta",
         native_options,
         Box::new(|_creation_context| Ok(Box::new(MonCompresseurApp::default()))),
     )
