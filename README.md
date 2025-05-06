@@ -25,7 +25,8 @@
 - **Interface utilisateur moderne** :
   - Basée sur [egui](https://github.com/emilk/egui), offrant une expérience fluide et réactive.
   - Journaux en temps réel pour suivre les actions effectuées.
-![image](https://github.com/user-attachments/assets/b9db846c-badf-4b5a-a288-c8e5da98384e)
+![image](https://github.com/user-attachments/assets/3143587a-f27d-408c-bb05-3468d376a1c3)
+
 
 
 
