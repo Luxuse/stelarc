@@ -1,5 +1,6 @@
 use eframe::egui;
-use egui::{RichText, Color32, Shadow, Visuals, Frame};
+use egui::{RichText, Color32, Shadow, Visuals, Frame, pos2, Pos2};
+use egui::menu::MenuState;
 use std::process::Command;
 use std::path::{Path, PathBuf};
 use std::fs;
@@ -8,6 +9,12 @@ use std::io::BufRead;
 use std::borrow::Cow;
 use std::thread;
 use std::collections::HashMap;
+use std::sync::{mpsc, Arc, Mutex};
+use rodio;
+use rodio::Source;
+
+// Import unique du trait Digest via sha3
+use sha3::digest::Digest;
 
 /// Application de compression/extraction inspirée de WinRAR/7-Zip
 struct CompressionStats {
@@ -41,6 +48,77 @@ struct Theme {
     accent_color: Color32,
 }
 
+impl Theme {
+    fn default_themes() -> Vec<Theme> {
+        vec![
+            Theme {
+                name: "Dark".to_string(),
+                primary_color: Color32::from_rgb(28, 29, 32),
+                secondary_color: Color32::from_rgb(35, 36, 40),
+                background_color: Color32::from_rgb(32, 33, 36),
+                text_color: Color32::WHITE,
+                accent_color: Color32::from_rgb(66, 133, 244),
+            },
+            Theme {
+                name: "Light".to_string(),
+                primary_color: Color32::from_rgb(245, 245, 245),
+                secondary_color: Color32::from_rgb(255, 255, 255),
+                background_color: Color32::from_rgb(250, 250, 250),
+                text_color: Color32::BLACK,
+                accent_color: Color32::from_rgb(26, 115, 232),
+            },
+        ]
+    }
+}
+
+#[derive(Debug, Clone)] // Add Clone derive to Notification
+struct Notification {
+    message: String,
+    level: NotificationLevel,
+    timestamp: std::time::Instant,
+}
+
+#[derive(Debug, PartialEq, Clone)] // Add Clone derive to NotificationLevel
+enum NotificationLevel {
+    Info,
+    Warning,
+    Error,
+    Success,
+}
+
+// Ajout des structures pour le calcul de hash
+#[derive(Debug, Clone, PartialEq)]
+enum HashType {
+    CRC32,
+    Blake3,
+    MD5,
+    SHA256,
+    SHA3_256
+}
+
+impl HashType {
+    fn label(&self) -> &'static str {
+        match self {
+            HashType::CRC32 => "CRC32",
+            HashType::Blake3 => "BLAKE3",
+            HashType::MD5 => "MD5",
+            HashType::SHA256 => "SHA-256",
+            HashType::SHA3_256 => "SHA3-256"
+        }
+    }
+
+    fn all() -> &'static [HashType] {
+        static ALL: [HashType; 5] = [
+            HashType::CRC32,
+            HashType::Blake3,
+            HashType::MD5,
+            HashType::SHA256,
+            HashType::SHA3_256,
+        ];
+        &ALL
+    }
+}
+
 struct MonCompresseurApp {
     current_dir: PathBuf,
     history: Vec<PathBuf>, // Navigation history for the explorer
@@ -55,6 +133,12 @@ struct MonCompresseurApp {
     preview_content: String,
     progress: Option<CompressionProgress>,
     current_stats: Option<FileStats>,
+    notification: Option<Notification>, // Added notification field
+    current_theme: Theme, // Added current theme field
+    notification_rx: Arc<Mutex<Option<mpsc::Receiver<Notification>>>>, // Updated notification receiver
+    show_hash_window: bool,
+    selected_hash_type: HashType,
+    hash_result: Option<String>,
 }
 
 /// Presets disponibles pour FreeArc, incluant des modes variés
@@ -66,30 +150,34 @@ enum CompressionPreset {
     Ultrafastlolz,
     Fastest,
     FastSrepLZ,
-    NormalPrecomplzma,
+    NormalPrecomplzmadelta,
     Normal,
     Best,
     Fastlolz,
+    MediumLOLZ,
     Maximum,
-    HighLOLZ,
+    MaximumLOLZ,
+
 }
 
 impl CompressionPreset {
     fn all() -> &'static [CompressionPreset] {
-        static ALL: [CompressionPreset; 12] = [
+        static ALL: [CompressionPreset; 13] = [
             CompressionPreset::Instant,
             CompressionPreset::HDDspeed,
             CompressionPreset::UltrafastSREP,
             CompressionPreset::Ultrafastlolz,
             CompressionPreset::Fastest,
             CompressionPreset::FastSrepLZ,
-            CompressionPreset::NormalPrecomplzma,
+            CompressionPreset::NormalPrecomplzmadelta,
             CompressionPreset::Normal,
+            CompressionPreset::Fastlolz,
             CompressionPreset::Best,
             CompressionPreset::Maximum,
-            CompressionPreset::Fastlolz,
-            CompressionPreset::HighLOLZ,
-            ];
+            CompressionPreset::MediumLOLZ,
+            CompressionPreset::MaximumLOLZ,
+            
+        ];
         &ALL
     }
 
@@ -97,16 +185,17 @@ impl CompressionPreset {
         match self {
             CompressionPreset::Instant => "Instant     (-m1)",
             CompressionPreset::HDDspeed => "HDD speed   (-m2)",
-            CompressionPreset::UltrafastSREP => "UltrafastSREP   (-m3d -s; -mc:rep/maxsrep)",
-            CompressionPreset::Ultrafastlolz => "Ultrafastlolz     (-m3d -s; -m=lolz:mtt0:mt12:d2m)",
+            CompressionPreset::UltrafastSREP => "UltrafastSREP   (-m3d -s; -mc:lzma/lzma:max:8mb -mc$default,$obj:+precomp -mc:rep/maxsrep)",
+            CompressionPreset::Ultrafastlolz => "Ultrafastlolz     (-m3d -s; -mc:lzma/lzma:max:8mb -mc$default,$obj:+precomp -m=lolz:mtt0:mt12:d2m)",
             CompressionPreset::Fastest => "Fastest     (-m3)",
-            CompressionPreset::FastSrepLZ => "Fast+Srep+LZ  (-m3d -s; -mc:lzma/lzma:max:8mb -mc:rep/maxsrep -mc$default,$obj:+precomp)",
+            CompressionPreset::FastSrepLZ => "Fast+Srep+LZ  (-m4d -s; -mc:lzma/lzma:max:32mb -mc:rep/maxsrep -mc$default,$obj:+precomp)",
             CompressionPreset::Normal => "Normal      (-m4)",
-            CompressionPreset::NormalPrecomplzma => "Normal+precomp+lzma (-m4 -mc:lzma/lzma:max:32mb -mc$default,$obj:+precomp)",
+            CompressionPreset::NormalPrecomplzmadelta => "Normal+precomp+lzma (-m4 -mc:lzma/lzma:max:32mb -mc$default,$obj:+precomp -mc-delta)",
             CompressionPreset::Best => "Best        (-m5)",
             CompressionPreset::Maximum => "Maximum       (-m9d)",
-            CompressionPreset::Fastlolz => "fastlolz (-m4d -s; -mc:lzma/lzma:max:64mb -mc$default,$obj:+maxprecomp -m=lolz:mtt1:mt6:d8m)",
-            CompressionPreset::HighLOLZ => "HighLOLZ (-m4d -s; -mc:lzma/lzma:max:192mb -mc:rep/maxsrep -mc$default,$obj:+precomp -m=lolz:mtt0:mt6:d64m)",
+            CompressionPreset::Fastlolz => "fastlolz (-m4d -s; -mc:lzma/lzma:max:64mb -mc:rep/maxsrep -mc$default,$obj:+precomp -m=lolz:mtt1:mt6:d8m)",        
+            CompressionPreset::MediumLOLZ => "MediumLOLZ (-m5d -s; -mc:lzma/lzma:max:96mb -mc:rep/maxsrep -mc$default,$obj:+precomp -m=lolz:mtt0:mt6:d48m)",
+            CompressionPreset::MaximumLOLZ => "MaximumLOLZ (-m5d -s; -mc:lzma/lzma:max:192mb -mc:rep/maxsrep -mc$default,$obj:+precomp -m=lolz:mtt0:mt6:d128m)",
         }
     }
 
@@ -115,16 +204,16 @@ impl CompressionPreset {
             CompressionPreset::Instant => vec!["-m1"],
             CompressionPreset::HDDspeed => vec!["-m2"],
             CompressionPreset::Fastest => vec!["-m3"], 
-            CompressionPreset::UltrafastSREP => vec!["-m3d", "-s;", "-mc:rep/maxsrep"],
-            CompressionPreset::Ultrafastlolz => vec!["-m3d", "-s;", "-m=lolz:mtt0:mt12:d2m"],
+            CompressionPreset::UltrafastSREP => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-mc:rep/maxsrep"],
+            CompressionPreset::Ultrafastlolz => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-m=lolz:mtt0:mt12:d2m"],
             CompressionPreset::FastSrepLZ => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp"],
             CompressionPreset::Normal => vec!["-m4"],
-            CompressionPreset::NormalPrecomplzma => vec!["-m4", "-mc:lzma/lzma:max:32mb", "-mc$default,$obj:+precomp"],
+            CompressionPreset::NormalPrecomplzmadelta => vec!["-m4", "-mc:lzma/lzma:max:32mb", "-mc$default,$obj:+precomp", "-mc-delta"],
             CompressionPreset::Best => vec!["-m5"],
             CompressionPreset::Maximum => vec!["-m9d"],
-            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb", "-mc$default,$obj:+maxprecomp", "-m=lolz:mtt1:mt6:d8m"],
-            CompressionPreset::HighLOLZ => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:192mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp", "-m=lolz:mtt0:mt6:d64m"],
- 
+            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp", "-m=lolz:mtt1:mt6:d8m"],
+            CompressionPreset::MaximumLOLZ => vec!["-m5d", "-s;", "-mc:lzma/lzma:max:192mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp", "-m=lolz:mtt0:mt6:d128m"],
+            CompressionPreset::MediumLOLZ => vec!["-m5d", "-s;", "-mc:lzma/lzma:max:96mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp", "-m=lolz:mtt0:mt6:d48m"],
         }
     }
 }
@@ -152,11 +241,36 @@ impl Default for MonCompresseurApp {
             preview_content: String::new(),
             progress: None,
             current_stats: None,
+            notification: None, // Initialize notification field
+            current_theme: Theme::default_themes()[0].clone(), // Dark theme par défaut
+            notification_rx: Arc::new(Mutex::new(None)), // Initialize notification receiver
+            show_hash_window: false,
+            selected_hash_type: HashType::CRC32,
+            hash_result: None,
         }
     }
 }
 
 impl MonCompresseurApp {
+    fn list_available_drives() -> Vec<PathBuf> {
+        let mut drives = Vec::new();
+        
+        if cfg!(windows) {
+            // Windows: check drives from C: to Z:
+            for letter in b'C'..=b'Z' {
+                let drive = format!("{}:\\", letter as char);
+                if Path::new(&drive).exists() {
+                    drives.push(PathBuf::from(drive));
+                }
+            }
+        } else {
+            // Linux/Unix: just add root
+            drives.push(PathBuf::from("/"));
+        }
+        
+        drives
+    }
+
     fn navigate_to(&mut self, dir: &Path) {
         if dir.is_dir() {
             if self.history_index + 1 < self.history.len() {
@@ -195,26 +309,40 @@ impl MonCompresseurApp {
     }
 
     fn show_directory(&mut self, ui: &mut egui::Ui) {
+        // Ajout du sélecteur de disques
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("💽 Disques:").strong());
+            let drives = Self::list_available_drives();
+            for drive in drives {
+                if ui.button(drive.display().to_string()).clicked() {
+                    self.navigate_to(&drive);
+                }
+            }
+        });
+        ui.add_space(8.0);
+
+        // Affichage du dossier parent
         if let Some(parent) = self.current_dir.parent() {
             let p = parent.to_path_buf();
             let name = "..";
             let is_selected = self.selected.contains(&p);
             let color = if is_selected { Color32::LIGHT_BLUE } else { ui.visuals().text_color() };
 
-            let response = ui
-                .colored_label(color, RichText::new(name))
-                .on_hover_text("Double-clic: aller au dossier parent");
+            ui.horizontal(|ui| {
+                let response = ui
+                    .colored_label(color, RichText::new(name))
+                    .on_hover_text("Double-clic: aller au dossier parent");
 
-            if response.double_clicked() {
-                self.navigate_to(&p);
-                // Sélectionner automatiquement le nouveau dossier pour la compression
-                if self.mode_compress {
-                    self.selected.clear();
-                    self.selected.push(p);
+                if response.double_clicked() {
+                    self.navigate_to(&p);
+                    if self.mode_compress {
+                        self.selected.clear();
+                        self.selected.push(p);
+                    }
                 }
-            }
-            ui.label("Dossier");
-            ui.end_row();
+                ui.label("Dossier");
+            });
+            ui.add_space(4.0);
         }
 
         if let Ok(entries) = fs::read_dir(&self.current_dir) {
@@ -236,37 +364,54 @@ impl MonCompresseurApp {
                     let is_selected = self.selected.contains(&p);
                     let color = if is_selected { Color32::LIGHT_BLUE } else { ui.visuals().text_color() };
 
-                    let mut rich_text_name = RichText::new(name.as_ref());
-                    if p.is_dir() {
-                        rich_text_name = rich_text_name.strong();
-                    }
-
-                    let response = ui
-                        .colored_label(color, rich_text_name)
-                        .on_hover_text("Double-clic: ouvrir dossier | Clic: sélectionner");
-
-                    if response.double_clicked() {
+                    ui.horizontal(|ui| {
+                        let mut rich_text_name = RichText::new(name.as_ref());
                         if p.is_dir() {
-                            self.navigate_to(&p);
+                            rich_text_name = rich_text_name.strong();
                         }
-                    } else if response.clicked() {
-                        if ui.ctx().input(|i| i.modifiers.ctrl) {
-                            if is_selected {
-                                self.selected.retain(|x| x != &p);
+
+                        let response = ui
+                            .colored_label(color, rich_text_name)
+                            .on_hover_text("Double-clic: ouvrir | Clic droit: menu");
+
+                        if response.double_clicked() {
+                            if p.is_dir() {
+                                self.navigate_to(&p);
+                            }
+                        } else if response.clicked() {
+                            if ui.ctx().input(|i| i.modifiers.ctrl) {
+                                if is_selected {
+                                    self.selected.retain(|x| x != &p);
+                                } else {
+                                    self.selected.push(p.clone());
+                                }
                             } else {
+                                self.selected.clear();
                                 self.selected.push(p.clone());
                             }
-                        } else {
-                            self.selected.clear();
-                            self.selected.push(p.clone());
                         }
-                    }
-                    ui.label(if p.is_dir() { "Dossier" } else { "Fichier" });
+
+                        // Afficher le menu contextuel
+                        self.show_context_menu(ui, &p);
+                        
+                        ui.label(if p.is_dir() { "Dossier" } else { "Fichier" });
+                    });
                     ui.end_row();
                 }
             });
         } else {
             ui.label(RichText::new(format!("Impossible de lire le répertoire : {}", self.current_dir.display())).color(Color32::RED));
+        }
+    }
+
+    fn play_notification_sound() {
+        static NOTIFICATION_BYTES: &[u8] = include_bytes!("notification_sound.wav");
+        if let Ok((_stream, stream_handle)) = rodio::OutputStream::try_default() {
+            let cursor = std::io::Cursor::new(NOTIFICATION_BYTES);
+            if let Ok(source) = rodio::Decoder::new(cursor) {
+                let _ = stream_handle.play_raw(source.convert_samples());
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
         }
     }
 
@@ -276,6 +421,8 @@ impl MonCompresseurApp {
 
         let action = action.to_string();
         let ctx_clone = ctx.clone();
+        let (tx, rx) = mpsc::channel();
+        let _notification_rx = Arc::clone(&self.notification_rx);
 
         thread::spawn(move || {
             cmd.stdout(std::process::Stdio::piped())
@@ -292,37 +439,66 @@ impl MonCompresseurApp {
                     // Lire stdout
                     for line in stdout_reader.lines() {
                         if let Ok(line) = line {
-                            println!("{}", line); // Afficher dans la console
-                            ctx_clone.request_repaint(); // Repeindre l'interface
+                            println!("{}", line);
+                            ctx_clone.request_repaint();
                         }
                     }
 
                     // Lire stderr
                     for line in stderr_reader.lines() {
                         if let Ok(line) = line {
-                            eprintln!("{}", line); // Afficher les erreurs dans la console
-                            ctx_clone.request_repaint(); // Repeindre l'interface
+                            eprintln!("{}", line);
+                            ctx_clone.request_repaint();
                         }
                     }
 
                     match child.wait() {
                         Ok(status) => {
                             if status.success() {
-                                println!("{} terminée avec succès", action);
+                                Self::play_notification_sound();
+                                let notification = Notification {
+                                    message: format!("{} terminée avec succès", action),
+                                    level: NotificationLevel::Success,
+                                    timestamp: std::time::Instant::now(),
+                                };
+                                tx.send(notification).ok();
                             } else {
-                                eprintln!("Erreur lors de {} (code: {:?})", action, status.code());
+                                Self::play_notification_sound();
+                                let notification = Notification {
+                                    message: format!("Erreur lors de {}", action),
+                                    level: NotificationLevel::Error,
+                                    timestamp: std::time::Instant::now(),
+                                };
+                                tx.send(notification).ok();
                             }
                         }
                         Err(e) => {
                             eprintln!("Erreur lors de l'attente du processus : {}", e);
+                            let notification = Notification {
+                                message: format!("Erreur: {}", e),
+                                level: NotificationLevel::Error,
+                                timestamp: std::time::Instant::now(),
+                            };
+                            tx.send(notification).ok();
                         }
                     }
                 }
                 Err(e) => {
                     eprintln!("Erreur lors du lancement de la commande : {}", e);
+                    let notification = Notification {
+                        message: format!("Erreur: {}", e),
+                        level: NotificationLevel::Error,
+                        timestamp: std::time::Instant::now(),
+                    };
+                    tx.send(notification).ok();
                 }
             }
         });
+
+        // Store the receiver for later use
+        if let Ok(mut rx_guard) = self.notification_rx.lock() {
+            *rx_guard = Some(rx);
+        }
     }
 
     fn handle_action(&mut self, ctx: &egui::Context) {
@@ -400,18 +576,18 @@ impl MonCompresseurApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Modern theme configuration
+        // Check for notifications at the start of the update
+        if let Ok(rx_guard) = self.notification_rx.lock() {
+            if let Some(rx) = rx_guard.as_ref() {
+                if let Ok(notification) = rx.try_recv() {
+                    self.notification = Some(notification);
+                }
+            }
+        }
+
         let mut style = (*ctx.style()).clone();
         style.spacing.item_spacing = egui::vec2(10.0, 10.0);
-        let mut visuals = Visuals::dark();
-        visuals.window_shadow = Shadow {
-            offset: [0, 4], // Use integer array for offset
-            blur: 8,        // Use integer for blur
-            spread: 2,      // Use integer for spread
-            color: Color32::from_black_alpha(96),
-        };
-        visuals.panel_fill = Color32::from_rgb(32, 33, 36);
-        visuals.window_fill = Color32::from_rgb(40, 41, 45);
+        let visuals = Visuals::dark();  // Utiliser uniquement le thème sombre
         style.visuals = visuals;
         ctx.set_style(style);
 
@@ -428,89 +604,65 @@ impl MonCompresseurApp {
                     color: Color32::from_black_alpha(60),
                 }))
             .show(ctx, |ui| {
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    ui.horizontal(|ui| {
-                        if ui.add(egui::Button::new("← Retour")
-                            .fill(if self.history_index > 0 {Color32::from_rgb(66, 133, 244)} else {Color32::from_rgb(50, 51, 55)})
-                            .corner_radius(5.0))
-                            .clicked() && self.history_index > 0 { 
-                            self.go_back();
-                        }
-                            
-                        if ui.add(egui::Button::new("→")
-                            .fill(if self.history_index + 1 < self.history.len() {Color32::from_rgb(66, 133, 244)} else {Color32::from_rgb(50, 51, 55)})
-                            .corner_radius(5.0))
-                            .clicked() && self.history_index + 1 < self.history.len() { 
-                            self.go_forward();
-                        }
-
-                        if ui.add(egui::Button::new("↑")
-                            .fill(Color32::from_rgb(66, 133, 244))
-                            .corner_radius(5.0))
-                            .clicked() {
-                            if let Some(parent) = self.current_dir.parent() {
-                                self.navigate_to(&parent.to_path_buf());
+                ui.horizontal_wrapped(|ui| {  // Changed to horizontal_wrapped
+                    // Navigation buttons group
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            if ui.add_enabled(
+                                self.history_index > 0,
+                                egui::Button::new("←").fill(Color32::from_rgb(66, 133, 244))
+                            ).clicked() {
+                                self.go_back();
                             }
-                        }
-                    });
-                    
-                    ui.add_space(20.0);
-                    
-                    // Modern mode selector
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.mode_compress, true, 
-                            RichText::new("📦 Compresser").size(16.0));
-                        ui.selectable_value(&mut self.mode_compress, false, 
-                            RichText::new("📂 Extraire").size(16.0));
-                    });
 
-                    ui.add_space(20.0);
+                            if ui.add_enabled(
+                                self.history_index + 1 < self.history.len(),
+                                egui::Button::new("→").fill(Color32::from_rgb(66, 133, 244))
+                            ).clicked() {
+                                self.go_forward();
+                            }
 
-                    // Modern preset selector
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("Preset:").size(16.0));
-                        egui::ComboBox::new("preset_selector", "")
-                            .selected_text(RichText::new(self.preset.label()).size(16.0))
-                            .show_ui(ui, |ui| {
-                                for preset in CompressionPreset::all() {
-                                    ui.selectable_value(&mut self.preset, preset.clone(),
-                                        RichText::new(preset.label()).size(16.0));
+                            if ui.button("↑").clicked() {
+                                // Clone the parent path before the mutable borrow
+                                if let Some(parent) = self.current_dir.parent().map(|p| p.to_path_buf()) {
+                                    self.navigate_to(&parent);
                                 }
-                            });
+                            }
+                        });
                     });
 
-                    ui.add_space(20.0);
+                    ui.add_space(10.0);
 
-                    // Extension selector
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("Extension:").size(16.0));
-                        let current_ext = self.output_path.extension()
-                            .and_then(|ext| ext.to_str())
-                            .unwrap_or("arc");
-                        let stem = self.output_path.file_stem()
-                            .map(|s| s.to_string_lossy().to_string())
-                            .unwrap_or_default();
-                        let parent = self.output_path.parent().unwrap_or(Path::new(""));
-                        let mut new_ext: Option<&str> = None;  // Add type annotation
-                        
-                        egui::ComboBox::from_label("")
-                            .selected_text(format!(".{}", current_ext))
-                            .show_ui(ui, |ui| {
-                                for ext in ["arc", "bin", "pak", "dat", "sfx"] {
-                                    let selected = current_ext == ext;
-                                    if ui.selectable_label(selected, format!(".{}", ext)).clicked() && !selected {
-                                        new_ext = Some(ext);
+                    // Mode selection group
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.selectable_value(&mut self.mode_compress, true, 
+                                RichText::new("📦 Compresser").size(16.0));
+                            ui.selectable_value(&mut self.mode_compress, false, 
+                                RichText::new("📂 Extraire").size(16.0));
+                        });
+                    });
+
+                    ui.add_space(10.0);
+
+                    // Preset selector group
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Preset:").size(16.0));
+                            egui::ComboBox::new("preset_selector", "")
+                                .selected_text(self.preset.label())
+                                .show_ui(ui, |ui| {
+                                    for preset in CompressionPreset::all() {
+                                        ui.selectable_value(
+                                            &mut self.preset,
+                                            preset.clone(),
+                                            preset.label()
+                                        );
                                     }
-                                }
-                            });
-
-                        if let Some(ext) = new_ext {
-                            self.output_path = parent.join(format!("{}.{}", stem, ext));
-                        }
+                                });
+                        });
                     });
                 });
-                ui.add_space(8.0);
             });
 
         // File explorer panel
@@ -589,14 +741,31 @@ impl MonCompresseurApp {
                         }
                     }
 
-                    // Extension selector
-                    egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
-                        .selected_text(format!(".{}", self.output_path.extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("arc")))
-                        .show_ui(ui, |ui| {
-                            // ... existing extension logic ...
-                        });
+                    // vers la ? 	// Extension selector
+egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
+.selected_text(format!(".{}", self.output_path.extension()
+    .and_then(|e| e.to_str())
+    .unwrap_or("arc")))
+.show_ui(ui, |ui| {
+    let extensions = ["arc", "bin", "doi", "bbv", "pak", "sfx"];
+    for ext in extensions.iter() {
+        // Calculate the potential path *before* calling selectable_value
+        let target_path = self.output_path.with_extension(ext);
+
+        // Now call selectable_value, passing the pre-calculated path
+        // This doesn't require an immutable borrow of self.output_path inside the call
+        if ui.selectable_value(
+            &mut self.output_path, // Mutable borrow
+            target_path,           // The target value (a PathBuf)
+            format!(".{}", ext)    // The label to display
+        ).clicked() {
+            // The selectable_value function already updates self.output_path
+            // to target_path if it was clicked and different,
+            // so you don't need this line anymore:
+            // self.output_path = self.output_path.with_extension(ext);
+        }
+    }
+});
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.add(egui::Button::new(RichText::new("▶ Exécuter").size(16.0))
@@ -627,6 +796,9 @@ impl MonCompresseurApp {
 
                 // Progress bar
                 self.show_progress(ui);
+
+                // Notification
+                self.show_notification(ui);
             });
 
         // Status bar
@@ -637,13 +809,18 @@ impl MonCompresseurApp {
                 .outer_margin(10.0))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("⚡ Mode:").strong());
-                    ui.label(if self.mode_compress {"Compression"} else {"Extraction"});
-                    ui.separator();
-                    ui.label(RichText::new("📊 Sélection:").strong());
-                    ui.label(format!("{} fichier(s)", self.selected.len()));
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.label(RichText::new("⚡ Mode:").strong());
+                        ui.label(if self.mode_compress {"Compression"} else {"Extraction"});
+                        ui.separator();
+                        ui.label(RichText::new("📊 Sélection:").strong());
+                        ui.label(format!("{} fichier(s)", self.selected.len()));
+                    });
                 });
             });
+
+        // Ajouter l'affichage de la fenêtre de hash
+        self.show_hash_window(ctx);
     }
 
     fn show_preview(&mut self, ui: &mut egui::Ui) {
@@ -665,6 +842,30 @@ impl MonCompresseurApp {
             let percentage = (progress.processed_bytes as f32 / progress.total_bytes as f32) * 100.0;
             ui.add(egui::ProgressBar::new(percentage / 100.0)
                 .text(format!("{:.1}% - Temps restant estimé: {:?}", percentage, progress.estimated_remaining)));
+        }
+    }
+
+    fn show_notification(&mut self, ui: &mut egui::Ui) {
+        if let Some(notification) = &self.notification {
+            let age = notification.timestamp.elapsed();
+            if age.as_secs() < 5 {
+                let (text_color, bg_color) = match notification.level {
+                    NotificationLevel::Info => (Color32::WHITE, Color32::from_rgb(66, 133, 244)),
+                    NotificationLevel::Warning => (Color32::BLACK, Color32::from_rgb(251, 188, 4)),
+                    NotificationLevel::Error => (Color32::WHITE, Color32::from_rgb(234, 67, 53)),
+                    NotificationLevel::Success => (Color32::WHITE, Color32::from_rgb(52, 168, 83)),
+                };
+
+                egui::Window::new("Notification")
+                    .fixed_pos(ui.available_rect_before_wrap().right_top())
+                    .frame(Frame::new()
+                        .fill(bg_color)
+                        .corner_radius(8.0)
+                        .outer_margin(8.0))
+                    .show(ui.ctx(), |ui| {
+                        ui.colored_label(text_color, &notification.message);
+                    });
+            }
         }
     }
 
@@ -695,6 +896,136 @@ impl MonCompresseurApp {
         style.visuals = visuals;
         ctx.set_style(style);
     }
+
+    fn calculate_directory_size(&self, path: &Path) -> u64 {
+        let mut total_size = 0;
+        if path.is_file() {
+            if let Ok(metadata) = fs::metadata(path) {
+                return metadata.len();
+            }
+        } else if path.is_dir() {
+            if let Ok(entries) = fs::read_dir(path) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    total_size += self.calculate_directory_size(&entry.path());
+                }
+            }
+        }
+        total_size
+    }
+
+    fn calculate_file_hash(path: &Path) -> Result<(HashType, String), String> {
+        if !path.is_file() {
+            return Err("Le fichier spécifié n'existe pas".to_string());
+        }
+
+        match std::fs::read(path) {
+            Ok(data) => {
+                // CRC32 (pas besoin de Digest)
+                let crc = crc32fast::hash(&data);
+                Ok((HashType::CRC32, format!("{:08X}", crc)))
+            }
+            Err(e) => Err(format!("Erreur lors de la lecture du fichier: {}", e))
+        }
+    }
+
+    fn show_hash_window(&mut self, ctx: &egui::Context) {
+        if self.show_hash_window {
+            let mut show = true;
+            egui::Window::new("Calculateur de Hash")
+                .open(&mut show)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.heading("Sélectionnez le type de hash");
+                    
+                    ui.horizontal(|ui| {
+                        if ui.selectable_label(self.selected_hash_type == HashType::CRC32, "CRC32").clicked() {
+                            self.selected_hash_type = HashType::CRC32;
+                        }
+                        if ui.selectable_label(self.selected_hash_type == HashType::Blake3, "BLAKE3").clicked() {
+                            self.selected_hash_type = HashType::Blake3;
+                        }
+                        if ui.selectable_label(self.selected_hash_type == HashType::MD5, "MD5").clicked() {
+                            self.selected_hash_type = HashType::MD5;
+                        }
+                        if ui.selectable_label(self.selected_hash_type == HashType::SHA256, "SHA-256").clicked() {
+                            self.selected_hash_type = HashType::SHA256;
+                        }
+                        if ui.selectable_label(self.selected_hash_type == HashType::SHA3_256, "SHA3-256").clicked() {
+                            self.selected_hash_type = HashType::SHA3_256;
+                        }
+                    });
+
+                    ui.add_space(10.0);
+                    
+                    let selected_file = self.selected.first().cloned();
+                    if let Some(file_path) = selected_file {
+                        ui.label(format!("Fichier sélectionné : {}", file_path.display()));
+                        if ui.button("Calculer le hash").clicked() {
+                            match Self::calculate_file_hash(&file_path) {
+                                Ok((hash_type, hash)) => {
+                                    self.hash_result = Some(hash);
+                                    self.notification = Some(Notification {
+                                        message: format!("Hash {} calculé avec succès", hash_type.label()),
+                                        level: NotificationLevel::Success,
+                                        timestamp: std::time::Instant::now(),
+                                    });
+                                }
+                                Err(e) => {
+                                    self.notification = Some(Notification {
+                                        message: e,
+                                        level: NotificationLevel::Error,
+                                        timestamp: std::time::Instant::now(),
+                                    });
+                                }
+                            }
+                        }
+                    } else {
+                        ui.label("Aucun fichier sélectionné");
+                    }
+
+                    if let Some(hash) = &self.hash_result {
+                        ui.add_space(10.0);
+                        ui.group(|ui| {
+                            ui.label(format!("{} :", self.selected_hash_type.label()));
+                            let text_response = ui.add(
+                                egui::TextEdit::singleline(&mut hash.as_str())
+                                    .desired_width(f32::INFINITY)
+                                    .font(egui::TextStyle::Monospace)
+                            );
+                            
+                            if ui.button("Copier").clicked() {
+                                ctx.copy_text(hash.clone());
+                                self.notification = Some(Notification {
+                                    message: "Hash copié dans le presse-papiers".to_string(),
+                                    level: NotificationLevel::Info,
+                                    timestamp: std::time::Instant::now(),
+                                });
+                            }
+                        });
+                    }
+                });
+            self.show_hash_window = show;
+        }
+    }
+
+    fn show_context_menu(&mut self, ui: &mut egui::Ui, path: &Path) {
+        let response = ui.interact(
+            ui.min_rect(),
+            ui.id().with("context_menu"),
+            egui::Sense::click(),
+        );
+
+        if response.secondary_clicked() {
+            let rect = response.rect;
+            let menu = MenuState::new(pos2(rect.left(), rect.bottom()));
+            if path.is_file() {
+                if ui.button("Calculer le hash...").clicked() {
+                    self.selected = vec![path.to_path_buf()];
+                    self.show_hash_window = true;
+                }
+            }
+        }
+    }
 }
 
 impl eframe::App for MonCompresseurApp {
@@ -708,6 +1039,75 @@ fn main() -> Result<(), eframe::Error> {
 
     if args.len() > 1 {
         match args[1].as_str() {
+            "--hash" => {
+                if args.len() > 2 {
+                    let path = PathBuf::from(&args[2]);
+                    if !path.exists() {
+                        eprintln!("Erreur : Le fichier n'existe pas");
+                        return Ok(());
+                    }
+
+                    // Récupérer le type de hash demandé
+                    let hash_type = if args.len() > 4 && args[3] == "--type" {
+                        match args[4].as_str() {
+                            "crc32" => vec![HashType::CRC32],
+                            "blake3" => vec![HashType::Blake3],
+                            "md5" => vec![HashType::MD5],
+                            "sha256" => vec![HashType::SHA256],
+                            "sha3" => vec![HashType::SHA3_256],
+                            "all" => HashType::all().to_vec(),
+                            _ => {
+                                eprintln!("Type de hash non reconnu");
+                                return Ok(());
+                            }
+                        }
+                    } else {
+                        HashType::all().to_vec()
+                    };
+
+                    if let Ok(data) = std::fs::read(&path) {
+                        println!("Calcul du hash pour : {}", path.display());
+                        println!("----------------------------------------");
+                        
+                        // Ne calculer que le hash sélectionné
+                        for hash_type in hash_type.iter() {
+                            match hash_type {
+                                HashType::CRC32 => {
+                                    let crc = crc32fast::hash(&data);
+                                    println!("CRC32    : {:08X}", crc);
+                                },
+                                HashType::Blake3 => {
+                                    let hash = blake3::hash(&data);
+                                    println!("BLAKE3   : {}", hash.to_hex());
+                                },
+                                HashType::MD5 => {
+                                    let mut hasher = md5::Md5::new();
+                                    hasher.update(&data);
+                                    println!("MD5      : {:x}", hasher.finalize());
+                                },
+                                HashType::SHA256 => {
+                                    let mut hasher = sha2::Sha256::new();
+                                    hasher.update(&data);
+                                    println!("SHA-256  : {:x}", hasher.finalize());
+                                },
+                                HashType::SHA3_256 => {
+                                    let mut hasher = sha3::Sha3_256::new();
+                                    hasher.update(&data);
+                                    println!("SHA3-256 : {:x}", hasher.finalize());
+                                }
+                            }
+                        }
+                        
+                        println!("----------------------------------------");
+                        println!("Appuyez sur une touche pour continuer...");
+                        let mut input = String::new();
+                        let _ = std::io::stdin().read_line(&mut input);
+                    } else {
+                        eprintln!("Erreur : Impossible de lire le fichier");
+                    }
+                    return Ok(());
+                }
+            }
             "--compress" => {
                 if args.len() > 2 {
                     let path = &args[2];
@@ -764,7 +1164,7 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     eframe::run_native(
-        "stelarc 0.4.46-beta",
+        "stelarc V1.0",
         native_options,
         Box::new(|_creation_context| Ok(Box::new(MonCompresseurApp::default()))),
     )
