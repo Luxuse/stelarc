@@ -1,25 +1,43 @@
+LICENCE DU LOGICIEL "STELARC"
+
 Copyright (c) 2025 Luxuse
 
-Ce logiciel, développé et publié par Luxuse, est mis à disposition selon les conditions suivantes :
+Ce logiciel, "Stelarc" (ci-après dénommé "le Logiciel"), développé et publié par Luxuse, est mis à votre disposition sous les conditions suivantes. En utilisant le Logiciel, vous reconnaissez avoir lu, compris et accepté l'intégralité des termes de cette licence. Si vous n'acceptez pas ces termes, vous ne devez pas utiliser le Logiciel.
 
-1. **Droits d'utilisation**
-   Vous êtes autorisé à utiliser, copier, modifier, et distribuer ce logiciel gratuitement pour un usage personnel, éducatif, expérimental ou non commercial.
+1. DROITS D'UTILISATION ET RESTRICTIONS
 
-2. **Utilisation commerciale**
-   Toute utilisation de ce logiciel à des fins commerciales ou lucratives est strictement interdite sans l'obtention préalable d'une autorisation écrite explicite de l’auteur (Luxuse). Cela inclut, sans s'y limiter, la vente, la location, l'incorporation dans un produit payant ou toute forme de monétisation directe ou indirecte.
+a. Usage Non Commercial et Personnel : Vous êtes autorisé à utiliser, copier, modifier et distribuer ce Logiciel gratuitement pour un usage personnel, éducatif, expérimental ou non commercial.
 
-3. **Propriété intellectuelle**
-   Ce logiciel reste la propriété intellectuelle de son auteur. Aucun droit de propriété n'est transféré par la présente licence. Toute copie ou distribution doit conserver cette notice de licence dans son intégralité.
+b. Utilisation Commerciale : Toute utilisation de ce Logiciel à des fins commerciales, lucratives ou professionnelles est strictement interdite sans l'obtention préalable d'une autorisation écrite explicite de l'auteur (Luxuse). Cela inclut, sans s'y limiter, la vente, la location, l'intégration dans un produit payant, l'hébergement de services basés sur le Logiciel, ou toute forme de monétisation directe ou indirecte.
 
-4. **Limitation de responsabilité**
-   Ce logiciel est fourni "tel quel", sans garantie d’aucune sorte, explicite ou implicite, y compris mais sans s’y limiter aux garanties de qualité marchande, d’adéquation à un usage particulier, ou d’absence de défauts. L’auteur ne pourra en aucun cas être tenu responsable de tout dommage direct ou indirect résultant de l’utilisation, de la mauvaise utilisation, ou de l’impossibilité d’utiliser ce logiciel. Cela inclut, mais ne se limite pas, à toute perte de données, corruption de fichiers, interruption de service ou toute autre conséquence dommageable.
+c. Restrictions Spécifiques - Usage Illégal et Contrefait : Le Logiciel n'est en aucun cas destiné à être utilisé pour des activités illégales ou contraires à l'éthique, y compris, mais sans s'y limiter :
+* La création, la distribution ou la modification de "repacks" de jeux, de logiciels ou de tout autre contenu protégé par le droit d'auteur.
+* La création ou l'utilisation de "cracks" de jeux, de logiciels, de systèmes de protection anticopie ou de tout autre contenu protégé.
+* Toute violation des droits de propriété intellectuelle de tiers.
+* Toute activité frauduleuse, malveillante ou portant atteinte à l'intégrité de systèmes informatiques ou de données.
 
-5. **Modifications et contributions**
-   Vous pouvez apporter des modifications au code source pour un usage personnel ou non commercial. Si vous redistribuez une version modifiée, vous devez clairement indiquer les changements effectués, ainsi que maintenir cette licence intacte, y compris l’attribution à Luxuse.
+L'utilisation du Logiciel pour de telles fins est strictement interdite et l'auteur (Luxuse) décline toute responsabilité quant aux conséquences découlant d'une utilisation non conforme ou illégale. Il est de votre seule responsabilité de vous assurer que votre utilisation du Logiciel respecte toutes les lois et réglementations applicables dans votre juridiction.
 
-6. **Acceptation**
-   En utilisant ce logiciel, vous reconnaissez avoir lu, compris et accepté les termes de cette licence.
+2. PROPRIÉTÉ INTELLECTUELLE
 
-Pour toute demande d’utilisation commerciale ou autre question, veuillez contacter l’auteur à l’adresse de contact fournie avec le projet (le cas échéant).
+Ce Logiciel et tous ses composants restent la propriété intellectuelle exclusive de Luxuse. Aucun droit de propriété ou licence implicite n'est transféré par la présente licence. Toute copie ou distribution du Logiciel doit conserver cette notice de licence et toutes les mentions de droit d'auteur dans leur intégralité.
 
-Fait par Luxuse – 2025.
+3. EXCLUSION DE GARANTIE ET LIMITATION DE RESPONSABILITÉ
+
+LE LOGICIEL EST FOURNI "TEL QUEL", SANS AUCUNE GARANTIE D'AUCUNE SORTE, EXPLICITE OU IMPLICITE, Y COMPRIS, MAIS SANS S'Y LIMITER, LES GARANTIES DE QUALITÉ MARCHANDE, D'ADAPTATION À UN USAGE PARTICULIER, D'ABSENCE DE CONTREFAÇON ET D'ABSENCE DE DÉFAUTS.  
+
+L'AUTEUR DU LOGICIEL (LUXUSE) NE SAURAIT EN AUCUN CAS ÊTRE TENU RESPONSABLE DE TOUT DOMMAGE DIRECT, INDIRECT, ACCESSOIRE, SPÉCIAL, EXEMPLAIRE OU CONSÉCUTIF (Y COMPRIS, MAIS SANS S'Y LIMITER, LA PERTE DE DONNÉES, LA CORRUPTION OU L'ENDOMMAGEMENT DE FICHIERS, L'INTERRUPTION D'ACTIVITÉ, LES PERTES DE BÉNÉFICES OU DE RÉPUTATION) RÉSULTANT DE L'UTILISATION, DE LA MAUVAISE UTILISATION, OU DE L'IMPOSSIBILITÉ D'UTILISER CE LOGICIEL, MÊME SI L'AUTEUR A ÉTÉ INFORMÉ DE LA POSSIBILITÉ DE TELS DOMMAGES.  
+
+VOUS RECONNAISSEZ ET ACCEPTEZ QUE L'UTILISATION DU LOGICIEL EST À VOS PROPRES RISQUES. VOUS ÊTES ENTIÈREMENT RESPONSABLE DE LA SAUVEGARDE RÉGULIÈRE ET APPROPRIÉE DE VOS DONNÉES ET FICHIERS AVANT ET APRÈS L'UTILISATION DU LOGICIEL. LUXUSE NE SERA PAS RESPONSABLE DE TOUTE PERTE, CORRUPTION OU DEGRADATION DE VOS DONNÉES OU FICHIERS, QUELLE QU'EN SOIT LA CAUSE.
+
+4. MODIFICATIONS ET CONTRIBUTIONS
+
+Vous êtes autorisé à apporter des modifications au code source du Logiciel pour un usage personnel ou non commercial. Si vous redistribuez une version modifiée, vous devez clairement indiquer les changements effectués, la date de ces modifications, et maintenir cette licence intacte, y compris l'attribution originale à Luxuse.
+
+5. ACCEPTATION
+
+En téléchargeant, installant ou utilisant ce Logiciel, vous confirmez que vous avez lu, compris et accepté l'intégralité des termes et conditions de cette licence. Le non-respect de ces termes mettra fin immédiatement à vos droits d'utilisation du Logiciel.
+
+Pour toute demande d'utilisation commerciale, question ou signalement, veuillez contacter l'auteur à l'adresse de contact fournie avec le projet (le cas échéant).
+
+Fait par Luxuse – Le 12 mai 2025.
