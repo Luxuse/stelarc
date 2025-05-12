@@ -1,6 +1,6 @@
 # Stelarc 
 
-**Stelarc** est une application graphique moderne de compression et d'extraction, inspirée des outils populaires, mais avec des fonctionnalités avancées et un support pour des technologies comme **Precomp**, **SREP**,  **LOLZ**, et d'autres algorithmes de compression.
+**Stelarc** est une application graphique moderne de compression et d'extraction, inspirée des outils populaires, mais avec des fonctionnalités avancées et un support pour des technologies comme **Precomp**, **SREP**,  **LOLZ**,  **XTOOL**, et d'autres algorithmes de compression.
 
 ## Fonctionnalités
 
@@ -23,6 +23,7 @@
     - Compression  avec précompression et LZMA
     - Compression  avec précompression et Lolz
     - Compression  avec précompression et Srep
+    - Compression  avec précompression et Xtool
 
 - **🔍Extraction puissante** :
   - Gestion des archives complexes.
