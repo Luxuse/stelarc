@@ -31,7 +31,7 @@ for %%F in ("%inputPath%") do set "normalizedPath=%%~fF"
 
 REM === Exécution de l’extraction ===
 echo Extraction demandée pour : %normalizedPath%
-"C:\ProgramData\stelarc\FreeArc\bin\arc.exe" x "%normalizedPath%" -o+ || (
+"C:\ProgramData\stelarc\FreeArc\arc.exe" x "%normalizedPath%" -o+ || (
     echo Erreur : L’extraction a échoué.
     pause
     exit /b 1

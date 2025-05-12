@@ -31,7 +31,7 @@ for %%F in ("%~nx1") do (
 REM Lancement de la compression
 echo.
 echo Compression demandee pour : %baseName%
-"C:\ProgramData\stelarc\FreeArc\bin\arc.exe" a "%baseName%.arc" "%baseName%" || (
+"C:\ProgramData\stelarc\FreeArc\arc.exe" a "%baseName%.arc" "%baseName%" || (
     echo Erreur : La compression a echoue.
     popd
     pause
