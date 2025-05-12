@@ -157,12 +157,13 @@ enum CompressionPreset {
     MediumLOLZ,
     Maximum,
     MaximumLOLZ,
-
+    MXtoolLolz,
+    Bxtool,
 }
 
 impl CompressionPreset {
     fn all() -> &'static [CompressionPreset] {
-        static ALL: [CompressionPreset; 13] = [
+        static ALL: [CompressionPreset; 15] = [
             CompressionPreset::Instant,
             CompressionPreset::HDDspeed,
             CompressionPreset::UltrafastSREP,
@@ -175,7 +176,9 @@ impl CompressionPreset {
             CompressionPreset::Best,
             CompressionPreset::Maximum,
             CompressionPreset::MediumLOLZ,
+            CompressionPreset::Bxtool,
             CompressionPreset::MaximumLOLZ,
+            CompressionPreset::MXtoolLolz,
             
         ];
         &ALL
@@ -185,20 +188,22 @@ impl CompressionPreset {
         match self {
             CompressionPreset::Instant => "Instant     (-m1)",
             CompressionPreset::HDDspeed => "HDD speed   (-m2)",
-            CompressionPreset::UltrafastSREP => "UltrafastSREP   (-m3d -s; -mc:lzma/lzma:max:8mb -mc$default,$obj:+precomp -mc:rep/maxsrep)",
-            CompressionPreset::Ultrafastlolz => "Ultrafastlolz     (-m3d -s; -mc:lzma/lzma:max:8mb -mc$default,$obj:+precomp -m=lolz:mtt0:mt12:d2m)",
+            CompressionPreset::UltrafastSREP => "UltrafastSREP   (-m3d -s; -mc:lzma/lzma:max:8mb  -mc:rep/maxsrep)",
+            CompressionPreset::Ultrafastlolz => "Ultrafastlolz     (-m3d -s; -mc:lzma/lzma:max:8mb  -m=lolz:mtt0:mt12:d2m)",
             CompressionPreset::Fastest => "Fastest     (-m3)",
-            CompressionPreset::FastSrepLZ => "Fast+Srep+LZ  (-m4d -s; -mc:lzma/lzma:max:32mb -mc:rep/maxsrep -mc$default,$obj:+precomp)",
+            CompressionPreset::FastSrepLZ => "Fast+Srep+LZ  (-m4d -s; -mc:lzma/lzma:max:32mb -mc:rep/maxsrep -mc$default,$obj:+precomp047:d1)",
             CompressionPreset::Normal => "Normal      (-m4)",
-            CompressionPreset::NormalPrecomplzmadelta => "Normal+precomp+lzma (-m4 -mc:lzma/lzma:max:32mb -mc$default,$obj:+precomp -mc-delta)",
+            CompressionPreset::NormalPrecomplzmadelta => "Normal+precomp+lzma (-m4 -mc:lzma/lzma:max:32mb -mc$default,$obj:+precomp047:d1 -mc-delta)",
             CompressionPreset::Best => "Best        (-m5)",
             CompressionPreset::Maximum => "Maximum       (-m9d)",
-            CompressionPreset::Fastlolz => "fastlolz (-m4d -s; -mc:lzma/lzma:max:64mb -mc:rep/maxsrep -mc$default,$obj:+precomp -m=lolz:mtt1:mt6:d8m)",        
-            CompressionPreset::MediumLOLZ => "MediumLOLZ (-m5d -s; -mc:lzma/lzma:max:96mb -mc:rep/maxsrep -mc$default,$obj:+precomp -m=lolz:mtt0:mt6:d48m)",
-            CompressionPreset::MaximumLOLZ => "MaximumLOLZ (-m5d -s; -mc:lzma/lzma:max:192mb -mc:rep/maxsrep -mc$default,$obj:+precomp -m=lolz:mtt0:mt6:d128m)",
+            CompressionPreset::Fastlolz => "fastlolz (-m4d -s; -mc:lzma/lzma:max:64mb  -mc$default,$obj:+precomp047:d1 -m=rep/maxsrep+lolz:mtt1:mt6:d8m)",        
+            CompressionPreset::MediumLOLZ => "MediumLOLZ (-m5d -s; -mc:lzma/lzma:max:96mb  -mc$default,$obj:+precomp047:d1 -m=rep/maxsrep+lolz:mtt0:mt6:d48m)",
+            CompressionPreset::Bxtool => "Bxtool (-m5d -s; -mc$default,$obj:+precomp047:d1 -mc:lzma/lzma:max:32mb -mxtool:c64mb:mpreflate:mzlib+xtool:dd3)",
+            CompressionPreset::MaximumLOLZ => "MaximumLOLZ (-m5d -s; -mc:lzma/lzma:max:192mb  -mc$default,$obj:+precomp047:d1 -m=rep/maxsrep+lolz:mtt0:mt6:d128m)",
+            CompressionPreset::MXtoolLolz => "MXtoolLolz (-m5d -s; precomp047+Lzma192MB+xtool+srep+preflate+mzlib+lolzfast+)",
         }
     }
-
+  
     fn flags(&self) -> Vec<&'static str> {
         match self {
             CompressionPreset::Instant => vec!["-m1"],
@@ -206,14 +211,17 @@ impl CompressionPreset {
             CompressionPreset::Fastest => vec!["-m3"], 
             CompressionPreset::UltrafastSREP => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-mc:rep/maxsrep"],
             CompressionPreset::Ultrafastlolz => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-m=lolz:mtt0:mt12:d2m"],
-            CompressionPreset::FastSrepLZ => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp"],
+            CompressionPreset::FastSrepLZ => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp047"],
             CompressionPreset::Normal => vec!["-m4"],
-            CompressionPreset::NormalPrecomplzmadelta => vec!["-m4", "-mc:lzma/lzma:max:32mb", "-mc$default,$obj:+precomp", "-mc-delta"],
+            CompressionPreset::NormalPrecomplzmadelta => vec!["-m4", "-mc:lzma/lzma:max:32mb", "-mc$default,$obj:+precomp047", "-mc-delta"],
             CompressionPreset::Best => vec!["-m5"],
             CompressionPreset::Maximum => vec!["-m9d"],
-            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp", "-m=lolz:mtt1:mt6:d8m"],
-            CompressionPreset::MaximumLOLZ => vec!["-m5d", "-s;", "-mc:lzma/lzma:max:192mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp", "-m=lolz:mtt0:mt6:d128m"],
-            CompressionPreset::MediumLOLZ => vec!["-m5d", "-s;", "-mc:lzma/lzma:max:96mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp", "-m=lolz:mtt0:mt6:d48m"],
+            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb",  "-mc$default,$obj:+precomp047:d1", "-m=rep/maxsrep+lolz:mtt1:mt6:d8m"],
+            CompressionPreset::MaximumLOLZ => vec!["-m5d", "-s;", "-mc:lzma/lzma:max:192mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp047:d1", "-m=rep/maxsrep+lolz:mtt0:mt6:d128m"],
+            CompressionPreset::MediumLOLZ => vec!["-m5d", "-s;", "-mc:lzma/lzma:max:96mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp047:d1", "-m=rep/maxsrep+lolz:mtt0:mt6:d48m"],                  
+            CompressionPreset::MXtoolLolz => vec!["-m5d", "-s;", "-mc$default,$obj:+precomp047:d1", "-mc:lzma/lzma:max:192mb", "-mxtool:c256mb:mpreflate:mzlib+xtool:dd3+lolz:mtt0:mt6:d16m"],
+            CompressionPreset::Bxtool => vec!["-m5d", "-s;", "-mc$default,$obj:+precomp047:d1", "-mc:lzma/lzma:max:32mb", "-mxtool:c64mb:mpreflate:mzlib+xtool:dd3"],
+        
         }
     }
 }
@@ -503,7 +511,7 @@ impl MonCompresseurApp {
 
     fn handle_action(&mut self, ctx: &egui::Context) {
         self.log.to_mut().clear();
-        let exe = if cfg!(windows) { ".\\FreeArc\\bin\\arc.exe" } else { "./FreeArc/bin/arc" };
+        let exe = if cfg!(windows) { ".\\FreeArc\\arc.exe" } else { "./FreeArc/bin/arc" };
 
         if !std::path::Path::new(exe).exists() {
             self.log.to_mut().push_str("Erreur : FreeArc n'est pas installé correctement\n");
@@ -1164,7 +1172,7 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     eframe::run_native(
-        "stelarc V1.0",
+        "stelarc V1.3.4",
         native_options,
         Box::new(|_creation_context| Ok(Box::new(MonCompresseurApp::default()))),
     )
