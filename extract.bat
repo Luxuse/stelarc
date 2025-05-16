@@ -1,5 +1,6 @@
 @echo off
 chcp 65001 > nul
+
 cls
 
 REM === Affiche la bannière ASCII si banner.txt existe ===
@@ -18,19 +19,29 @@ if "%~1"=="" (
     exit /b 1
 )
 
-REM === Vérifie l’existence ===
+REM === Vérifie l’existence du fichier ===
 if not exist "%~1" (
     echo Erreur : Le fichier "%~1" est introuvable.
     pause
     exit /b 1
 )
 
-REM === Normalise le chemin du fichier à extraire ===
+REM === Normalise le chemin du fichier à extraire et récupère sa taille ===
 set "inputPath=%~1"
-for %%F in ("%inputPath%") do set "normalizedPath=%%~fF"
+for %%F in ("%inputPath%") do (
+    set "normalizedPath=%%~fF"
+    set "arcSize=%%~zF"
+)
+
+REM === Affiche la taille de l’archive ===
+set /a arcSizeMB=%arcSize% / 1048576
+echo(
+echo Fichier détecté : %normalizedPath%
+echo Taille de l’archive : %arcSizeMB% Mo
+echo(
+echo Début de l’extraction, veuillez patienter...
 
 REM === Exécution de l’extraction ===
-echo Extraction demandée pour : %normalizedPath%
 "C:\ProgramData\stelarc\FreeArc\arc.exe" x "%normalizedPath%" -o+ || (
     echo Erreur : L’extraction a échoué.
     pause
@@ -40,3 +51,4 @@ echo Extraction demandée pour : %normalizedPath%
 echo(
 echo Extraction terminée avec succès.
 pause
+

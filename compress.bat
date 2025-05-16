@@ -47,15 +47,15 @@ if "%fmt%"=="1" (
 :ARC_LEVEL_MENU
 echo.
 echo Choisissez le niveau de compression FreeArc :
-echo   1. m1 (très rapide)
-echo   2. m2
-echo   3. m3
-echo   4. m4
-echo   5. m5
-echo   6. m6
-echo   7. m7
-echo   8. m8
-echo   9. m9 (très fort)
+echo   1. m1 (tres rapide)
+echo   2. m2 (rapide)
+echo   3. m3 (equilibre)
+echo   4. m4 (bon compromis)
+echo   5. m5 (meilleure compression)
+echo   6. m6 (ultra)
+echo   7. m7 (maximum)
+echo   8. m8 (extreme)
+echo   9. m9 (insane)
 echo.
 set /p "level=Votre choix (1-9) : "
 
@@ -82,11 +82,11 @@ goto SUCCESS
 :SEVENZ_LEVEL_MENU
 echo.
 echo Choisissez le niveau de compression 7z (via FreeArc) :
-echo   1. -mx1 (rapide)
-echo   2. -mx3
-echo   3. -mx5
-echo   4. -mx7
-echo   5. -mx9 (maximum)
+echo   1. -mx1  (tres rapide)
+echo   2. -mx3  (equilibre)
+echo   3. -mx5  (meilleure compression)
+echo   4. -mx7  (ultra)
+echo   5. -mx9  (maximum)
 echo.
 set /p "mx=Votre choix (1-5) : "
 
