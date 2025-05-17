@@ -14,7 +14,7 @@ if exist "%~dp0banner.txt" (
 
 REM === Vérifie l’argument ===
 if "%~1"=="" (
-    echo Erreur : Aucun fichier .arc spécifié.
+    echo Erreur : Aucun fichier spécifié.
     pause
     exit /b 1
 )
@@ -31,6 +31,8 @@ set "inputPath=%~1"
 for %%F in ("%inputPath%") do (
     set "normalizedPath=%%~fF"
     set "arcSize=%%~zF"
+    set "fileExt=%%~xF"
+    set "fileDir=%%~dpF"
 )
 
 REM === Affiche la taille de l’archive ===
@@ -41,14 +43,30 @@ echo Taille de l’archive : %arcSizeMB% Mo
 echo(
 echo Début de l’extraction, veuillez patienter...
 
-REM === Exécution de l’extraction ===
-"C:\ProgramData\stelarc\FreeArc\arc.exe" x "%normalizedPath%"  -o+ || (
-    echo Erreur : L’extraction a échoué.
-    pause
-    exit /b 1
+REM === Vérifie l'extension du fichier et exécute l'extraction appropriée ===
+if /i "%fileExt%" == ".7z" (
+    echo Extraction avec 7z...
+    "C:\ProgramData\stelarc\Freearc\7z.exe" x "%normalizedPath%" -o"%fileDir%" -y || (
+        echo Erreur : L’extraction avec 7z a échoué.
+        pause
+        exit /b 1
+    )
+) else if /i "%fileExt%" == ".zip" (
+    echo Extraction avec 7z...
+    "C:\ProgramData\stelarc\Freearc\7z.exe" x "%normalizedPath%" -o"%fileDir%" -y || (
+        echo Erreur : L’extraction avec 7z a échoué.
+        pause
+        exit /b 1
+    )
+) else (
+    echo Extraction avec arc.exe...
+    "C:\ProgramData\stelarc\FreeArc\arc.exe" x "%normalizedPath%" -o+ || (
+        echo Erreur : L’extraction avec arc.exe a échoué.
+        pause
+        exit /b 1
+    )
 )
 
 echo(
 echo Extraction terminée avec succès.
 pause
-
