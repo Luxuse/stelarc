@@ -42,7 +42,7 @@ echo(
 echo Début de l’extraction, veuillez patienter...
 
 REM === Exécution de l’extraction ===
-"C:\ProgramData\stelarc\FreeArc\arc.exe" x "%normalizedPath%" -o+ || (
+"C:\ProgramData\stelarc\FreeArc\arc.exe" x "%normalizedPath%"  -o+ || (
     echo Erreur : L’extraction a échoué.
     pause
     exit /b 1

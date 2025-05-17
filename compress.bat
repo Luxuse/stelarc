@@ -30,6 +30,7 @@ echo.
 echo Choisissez le format de compression :
 echo   1. FreeArc (.arc)
 echo   2. FreeArc avec compression 7z (.7z)
+echo   3. FreeArc avec compression 7z experimantale (.7z)
 echo.
 set /p "fmt=Entrez votre choix (1-2) : "
 
@@ -37,8 +38,11 @@ if "%fmt%"=="1" (
     set "ext=arc"
     goto ARC_LEVEL_MENU
 ) else if "%fmt%"=="2" (
-    set "ext=7z"
+    set "ext=7zEX"
     goto SEVENZ_LEVEL_MENU
+) else if "%fmt%"=="3" (
+    set "ext=7z"
+    goto SEVENZ_LEVEL_MENUEX
 ) else (
     echo Choix invalide.
     goto FORMAT_MENU
@@ -105,6 +109,34 @@ echo.
 echo Compression avec FreeArc vers .7z avec %method%...
 "C:\ProgramData\stelarc\FreeArc\arc.exe" a -dp %method% "%baseName%.7z" "%baseName%" || goto ERR
 goto SUCCESS
+
+:SEVENZ_LEVEL_MENUEX
+echo.
+echo Choisissez le niveau de compression 7z and ZSTD  experimantale (via FreeArc) :
+echo   1. -mx1 ZSTD  (tres rapide)
+echo   2. -mx3 ZSTD  (equilibre)
+echo   3. -mx5 ZSTD  (meilleure compression)
+echo   4. -mx7 ZSTD  (ultra)
+echo   5. -mx9 ZSTD  (maximum)
+echo.
+set /p "mx=Votre choix (1-5) : "
+
+if "%mx%"=="1" set "method=-m7z -mx1 -mzstd:6:T0"
+if "%mx%"=="2" set "method=-m7z -mx3 -mzstd:8:T0"
+if "%mx%"=="3" set "method=-m7z -mx5 -mzstd:14:T0"
+if "%mx%"=="4" set "method=-m7z -mx7 -mzstd:18:T0"
+if "%mx%"=="5" set "method=-m7z -mx -mzstd:22:T0"
+
+if not defined method (
+    echo Choix invalide.
+    goto SEVENZ_LEVEL_MENU
+)
+
+echo.
+echo Compression avec FreeArc vers .7z avec %method%...
+"C:\ProgramData\stelarc\FreeArc\arc.exe" a -dp %method% "%baseName%.7z" "%baseName%" || goto ERR
+goto SUCCESS
+
 
 :SUCCESS
 echo.
