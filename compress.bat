@@ -98,7 +98,7 @@ if "%mx%"=="1" set "method=-m7z -mx1"
 if "%mx%"=="2" set "method=-m7z -mx3"
 if "%mx%"=="3" set "method=-m7z -mx5"
 if "%mx%"=="4" set "method=-m7z -mx7"
-if "%mx%"=="5" set "method=-m7z -mx -mc:lzma/lzma:max:512mb"
+if "%mx%"=="5" set "method=-m7z -mx -mc:lzma2/lzma2:max:512mb"
 
 if not defined method (
     echo Choix invalide.
@@ -121,11 +121,11 @@ echo   5. -mx9 ZSTD  (maximum)
 echo.
 set /p "mx=Votre choix (1-5) : "
 
-if "%mx%"=="1" set "method=-m7z -mx1 -mzstd:6:T0"
-if "%mx%"=="2" set "method=-m7z -mx3 -mzstd:8:T0"
-if "%mx%"=="3" set "method=-m7z -mx5 -mzstd:14:T0"
-if "%mx%"=="4" set "method=-m7z -mx7 -mzstd:18:T0"
-if "%mx%"=="5" set "method=-m7z -mx -mzstd:22:T0"
+if "%mx%"=="1" set "method=-m7z -mx1 -s; -mc:lzma2/lzma2:max:4mb -mzstd:6:T0"
+if "%mx%"=="2" set "method=-m7z -mx3 -s; -mc:lzma2/lzma2:max:64mb -mzstd:14:T0"
+if "%mx%"=="3" set "method=-m7z -mx5 -s; -mc:lzma2/lzma2:max:192mb -mzstd:17:T0"
+if "%mx%"=="4" set "method=-m7z -mx7 -s; -mc:lzma2/lzma2:max:384mb -mzstd:20:T0"
+if "%mx%"=="5" set "method=-m7z -mx -s; -mc:lzma2/lzma2:max:768mb -mzstd:22:T0"
 
 if not defined method (
     echo Choix invalide.
