@@ -1,61 +1,58 @@
 Windows Registry Editor Version 5.00
 
-; Association des fichiers .arc
-[HKEY_CLASSES_ROOT\.arc]
-@="StelarcArchive"
+; ---------- Extensions -------------------------------------------------
 
-; Option "Ajouter a l'archive" pour les dossiers
-[HKEY_CLASSES_ROOT\Directory\shell\add_to_archive]
-@="Ajouter a l'archive"
-"Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\.arc]  @="Stelarc.Archive"
+[HKEY_CLASSES_ROOT\.stel] @="Stelarc.Stel"
+[HKEY_CLASSES_ROOT\.zip]  @="Stelarc.Zip"
+[HKEY_CLASSES_ROOT\.bin]  @="Stelarc.Bin"
+[HKEY_CLASSES_ROOT\.bbv]  @="Stelarc.BBV"
+[HKEY_CLASSES_ROOT\.doi]  @="Stelarc.DOI"
+[HKEY_CLASSES_ROOT\.7zip] @="Stelarc.7Zip"
+[HKEY_CLASSES_ROOT\.7z]   @="Stelarc.7Zip"   ; alias facultatif
 
-[HKEY_CLASSES_ROOT\Directory\shell\add_to_archive\command]
-@="cmd.exe /c \"C:\\ProgramData\\stelarc\\compress.bat \"%1\"\""
+; ---------- ProgIDs : libellé + icône ----------------------------------
 
-; Option "Ajouter a l'archive" pour les fichiers
-[HKEY_CLASSES_ROOT\*\shell\add_to_archive]
-@="Ajouter a l'archive"
-"Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\Stelarc.Archive]              @="Archive Stelarc"
+[HKEY_CLASSES_ROOT\Stelarc.Archive\DefaultIcon]  @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
 
-[HKEY_CLASSES_ROOT\*\shell\add_to_archive\command]
-@="cmd.exe /c \"C:\\ProgramData\\stelarc\\compress.bat \"%1\"\""
+[HKEY_CLASSES_ROOT\Stelarc.Stel]                 @="Fichier Stelarc"
+[HKEY_CLASSES_ROOT\Stelarc.Stel\DefaultIcon]     @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
 
-; Option "Extraire" pour les dossiers
-[HKEY_CLASSES_ROOT\Directory\shell\extract]
-@="Extraire"
-"Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\Stelarc.Zip]                  @="Archive Zip Stelarc"
+[HKEY_CLASSES_ROOT\Stelarc.Zip\DefaultIcon]      @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
 
-[HKEY_CLASSES_ROOT\Directory\shell\extract\command]
-@="cmd.exe /c \"if exist \"%1\" (C:\\ProgramData\\stelarc\\extract.bat \"%1\") else echo Dossier introuvable\""
+[HKEY_CLASSES_ROOT\Stelarc.Bin]                  @="Fichier Bin Stelarc"
+[HKEY_CLASSES_ROOT\Stelarc.Bin\DefaultIcon]      @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
 
-; Option "Extraire" pour les fichiers
-[HKEY_CLASSES_ROOT\*\shell\extract]
-@="Extraire ici"
-"Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\Stelarc.BBV]                  @="Archive BBV Stelarc"
+[HKEY_CLASSES_ROOT\Stelarc.BBV\DefaultIcon]      @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
 
-[HKEY_CLASSES_ROOT\*\shell\extract\command]
-@="cmd.exe /c \"if exist \"%1\" (C:\\ProgramData\\stelarc\\extract.bat \"%1\") else echo Fichier introuvable\""
+[HKEY_CLASSES_ROOT\Stelarc.DOI]                  @="Fichier DOI Stelarc"
+[HKEY_CLASSES_ROOT\Stelarc.DOI\DefaultIcon]      @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
 
-; Option "Extraire" pour les archives
-[HKEY_CLASSES_ROOT\StelarcArchive\shell\extract]
-@="Extraire ici"
-"Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\Stelarc.7Zip]                 @="Archive 7-Zip Stelarc"
+[HKEY_CLASSES_ROOT\Stelarc.7Zip\DefaultIcon]     @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
 
-[HKEY_CLASSES_ROOT\StelarcArchive\shell\extract\command]
-@="cmd.exe /c \"C:\\ProgramData\\stelarc\\extract.bat \"%1\"\""
+; ---------- Menu contextuel (inchangé) ---------------------------------
 
-; Option "Calculer le hash" pour les fichiers
-[HKEY_CLASSES_ROOT\*\shell\calculate_hash]
-@="Calculer le hash"
-"Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\Directory\shell\add_to_archive]        @="Ajouter a l'archive" "Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\Directory\shell\add_to_archive\command] @="cmd.exe /c \"C:\\ProgramData\\stelarc\\compress.bat \"%1\"\""
 
-[HKEY_CLASSES_ROOT\*\shell\calculate_hash\command]
-@="cmd.exe /c \"C:\\ProgramData\\stelarc\\hash.bat \"%1\"\""
+[HKEY_CLASSES_ROOT\*\shell\add_to_archive]        @="Ajouter a l'archive" "Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\*\shell\add_to_archive\command] @="cmd.exe /c \"C:\\ProgramData\\stelarc\\compress.bat \"%1\"\""
 
-; Option "Lancer Stelarc"
-[HKEY_CLASSES_ROOT\Directory\shell\launch_stelarc]
-@="Lancer Stelarc"
-"Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\Directory\shell\extract]        @="Extraire" "Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\Directory\shell\extract\command] @="cmd.exe /c \"if exist \"%1\" (C:\\ProgramData\\stelarc\\extract.bat \"%1\") else echo Dossier introuvable\""
 
-[HKEY_CLASSES_ROOT\Directory\shell\launch_stelarc\command]
-@="cmd.exe /c \"start C:\\ProgramData\\stelarc\\stelarc.exe\""
+[HKEY_CLASSES_ROOT\*\shell\extract]        @="Extraire ici" "Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\*\shell\extract\command] @="cmd.exe /c \"if exist \"%1\" (C:\\ProgramData\\stelarc\\extract.bat \"%1\") else echo Fichier introuvable\""
+
+[HKEY_CLASSES_ROOT\Stelarc.Archive\shell\extract]        @="Extraire ici" "Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\Stelarc.Archive\shell\extract\command] @="cmd.exe /c \"C:\\ProgramData\\stelarc\\extract.bat \"%1\"\""
+
+[HKEY_CLASSES_ROOT\*\shell\calculate_hash]        @="Calculer le hash" "Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\*\shell\calculate_hash\command] @="cmd.exe /c \"C:\\ProgramData\\stelarc\\hash.bat \"%1\"\""
+
+[HKEY_CLASSES_ROOT\Directory\shell\launch_stelarc]        @="Lancer Stelarc" "Icon"="C:\\ProgramData\\stelarc\\icon.ico"
+[HKEY_CLASSES_ROOT\Directory\shell\launch_stelarc\command] @="cmd.exe /c \"start C:\\ProgramData\\stelarc\\stelarc.exe\""
