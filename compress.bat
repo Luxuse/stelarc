@@ -111,29 +111,49 @@ goto SUCCESS
 :SHARKY_LEVEL_MENU
 cls
 echo.
-echo Sharky  - choisissez le niveau XZ (0-9) :
-echo   1. Rapide       (level 3)
-echo   2. Equilibre    (level 5)
-echo   3. Compromis    (level 7)
-echo   4. Meilleure    (level 9)
-echo   5. Insane       (level 9, presets max)
+echo Sharky - choisissez le niveau de compression :
+echo   1. Rapide      (XZ preset=1,  Zstd=2)
+echo   2. Equilibre   (XZ preset=4,  Zstd=7)
+echo   3. Compromis   (XZ preset=6,  Zstd=13)
+echo   4. Meilleure   (XZ preset=9,  Zstd=18)
+echo   5. Insane      (XZ preset=9,  Zstd=22)
 echo.
-set "sharky_lv="
-set /p "lvlS=Votre choix (1-5) : "
-if "%lvlS%"=="1" set "sharky_lv=3"
-if "%lvlS%"=="2" set "sharky_lv=5"
-if "%lvlS%"=="3" set "sharky_lv=7"
-if "%lvlS%"=="4" set "sharky_lv=9"
-if "%lvlS%"=="5" set "sharky_lv=9"
-if not defined sharky_lv (
-  echo Choix invalide.
-  pause
-  goto SHARKY_LEVEL_MENU
+set "xz_preset="
+set "zstd_level="
+set /p "lvl=Votre choix (1-5) : "
+
+if "%lvl%"=="1" (
+    set "xz_preset=1"
+    set "zstd_level=2"
+) else if "%lvl%"=="2" (
+    set "xz_preset=4"
+    set "zstd_level=7"
+) else if "%lvl%"=="3" (
+    set "xz_preset=6"
+    set "zstd_level=13"
+) else if "%lvl%"=="4" (
+    set "xz_preset=9"
+    set "zstd_level=18"
+) else if "%lvl%"=="5" (
+    set "xz_preset=9"
+    set "zstd_level=22"
 )
+
+if not defined xz_preset (
+    echo Choix invalide.
+    pause
+    goto SHARKY_LEVEL_MENU
+)
+
 echo.
-echo Compression Sharky level !sharky_lv! vers !baseName!.!ext!...
-"C:\ProgramData\stelarc\sharky\sharky.exe" -c -l !sharky_lv! -i "!inputNameExt!" -o "!baseName!.!ext!" || goto ERR
-goto SUCCESS
+echo Vous avez choisi : XZ preset=!xz_preset!, Zstd level=!zstd_level!.
+echo Compression de !inputNameExt! vers !baseName!.!ext!...
+"C:\ProgramData\stelarc\sharky\sharky.exe" ^
+    -c ^
+    -x !xz_preset! ^
+    -z !zstd_level! ^
+    -i "!inputNameExt!" ^
+    -o "!baseName!.!ext!" || goto ERR
 
 
 :SUCCESS

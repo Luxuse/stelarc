@@ -1,40 +1,8 @@
 Windows Registry Editor Version 5.00
 
-; ---------- Extensions -------------------------------------------------
-
-[HKEY_CLASSES_ROOT\.arc]  @="Stelarc.Archive"
-[HKEY_CLASSES_ROOT\.stel] @="Stelarc.Stel"
-[HKEY_CLASSES_ROOT\.zip]  @="Stelarc.Zip"
-[HKEY_CLASSES_ROOT\.bin]  @="Stelarc.Bin"
-[HKEY_CLASSES_ROOT\.bbv]  @="Stelarc.BBV"
-[HKEY_CLASSES_ROOT\.doi]  @="Stelarc.DOI"
-[HKEY_CLASSES_ROOT\.7zip] @="Stelarc.7Zip"
-[HKEY_CLASSES_ROOT\.7z]   @="Stelarc.7Zip"   ; alias facultatif
-
-; ---------- ProgIDs : libellé + icône ----------------------------------
-
-[HKEY_CLASSES_ROOT\Stelarc.Archive]              @="Archive Stelarc"
-[HKEY_CLASSES_ROOT\Stelarc.Archive\DefaultIcon]  @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
-
-[HKEY_CLASSES_ROOT\Stelarc.Stel]                 @="Fichier Stelarc"
-[HKEY_CLASSES_ROOT\Stelarc.Stel\DefaultIcon]     @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
-
-[HKEY_CLASSES_ROOT\Stelarc.Zip]                  @="Archive Zip Stelarc"
-[HKEY_CLASSES_ROOT\Stelarc.Zip\DefaultIcon]      @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
-
-[HKEY_CLASSES_ROOT\Stelarc.Bin]                  @="Fichier Bin Stelarc"
-[HKEY_CLASSES_ROOT\Stelarc.Bin\DefaultIcon]      @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
-
-[HKEY_CLASSES_ROOT\Stelarc.BBV]                  @="Archive BBV Stelarc"
-[HKEY_CLASSES_ROOT\Stelarc.BBV\DefaultIcon]      @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
-
-[HKEY_CLASSES_ROOT\Stelarc.DOI]                  @="Fichier DOI Stelarc"
-[HKEY_CLASSES_ROOT\Stelarc.DOI\DefaultIcon]      @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
-
-[HKEY_CLASSES_ROOT\Stelarc.7Zip]                 @="Archive 7-Zip Stelarc"
-[HKEY_CLASSES_ROOT\Stelarc.7Zip\DefaultIcon]     @="C:\\ProgramData\\stelarc\\reg-icon\\archive.ico"
-
-; ---------- Menu contextuel (inchangé) ---------------------------------
+; Association des fichiers .arc
+[HKEY_CLASSES_ROOT\.arc]
+@="StelarcArchive"
 
 ; Option "Ajouter a l'archive" pour les dossiers
 [HKEY_CLASSES_ROOT\Directory\shell\add_to_archive]
