@@ -1,17 +1,18 @@
 use eframe::egui;
-use egui::{RichText, Color32, Shadow, Visuals, Frame, pos2, Pos2};
+use egui::{RichText, Color32, Shadow, Visuals, Frame, pos2};
 use egui::menu::MenuState;
 use std::process::Command;
 use std::path::{Path, PathBuf};
 use std::fs;
 use rfd;
 use std::io::BufRead;
-use std::borrow::Cow;
 use std::thread;
 use std::collections::HashMap;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::mpsc;
 use rodio;
 use rodio::Source;
+use sysinfo::{System, Process}; // <-- Correction de l'import
+
 
 // Import unique du trait Digest via sha3
 use sha3::digest::Digest;
@@ -119,26 +120,44 @@ impl HashType {
     }
 }
 
+// Nouveau type de message pour la communication depuis le thread de commande
+#[derive(Debug)]
+enum CommandUpdate {
+    LogOutput(String),      // Une ligne de log (stdout ou stderr)
+    Progress(f32),          // Progression en pourcentage (0.0 à 1.0)
+    ProcessCompleted(Result<String, String>), // Résultat: Ok(message_succès) ou Err(message_erreur)
+}
+
 struct MonCompresseurApp {
     current_dir: PathBuf,
-    history: Vec<PathBuf>, // Navigation history for the explorer
-    history_index: usize, // Current position in history
-    selected: Vec<PathBuf>, // Files/folders selected in the explorer
-    mode_compress: bool, // true for compress, false for extract
-    preset: CompressionPreset, // Selected compression preset
-    output_path: PathBuf, // Path for the output archive or extraction destination (when in extract mode, this is the archive to extract)
-    log: Cow<'static, str>, // Utilisation de Cow pour éviter des copies inutiles
+    history: Vec<PathBuf>,
+    history_index: usize,
+    selected: Vec<PathBuf>,
+    mode_compress: bool,
+    preset: CompressionPreset,
+    output_path: PathBuf,
+    log_lines: Vec<String>,       // Pour les logs en temps réel
     stats: Option<CompressionStats>,
     preview_file: Option<PathBuf>,
     preview_content: String,
-    progress: Option<CompressionProgress>,
+    progress_value: f32, // 0.0 à 1.0 pour la barre de progression
+    operation_status: String, // Ex: "Compression en cours...", "Terminé", "Erreur"
+    is_processing: bool,  // True si une commande est en cours
     current_stats: Option<FileStats>,
-    notification: Option<Notification>, // Added notification field
-    current_theme: Theme, // Added current theme field
-    notification_rx: Arc<Mutex<Option<mpsc::Receiver<Notification>>>>, // Updated notification receiver
+    notification: Option<Notification>,
+    current_theme: Theme,
+    command_rx: Option<mpsc::Receiver<CommandUpdate>>, // Pour recevoir les logs/progressions
+    command_tx: Option<mpsc::Sender<CommandUpdate>>,   // Pour envoyer depuis le thread (gardé temporairement)
     show_hash_window: bool,
     selected_hash_type: HashType,
     hash_result: Option<String>,
+
+    // Pour CPU/RAM
+    sys: System,
+    cpu_usage: f32,        // 0.0 à 1.0
+    ram_usage_mb: u64,
+    ram_total_mb: u64,
+    arc_pid: Option<u32>,
 }
 
 /// Presets disponibles pour FreeArc, incluant des modes variés
@@ -159,11 +178,14 @@ enum CompressionPreset {
     MaximumLOLZ,
     MXtoolLolz,
     Bxtool,
+    XtoolC,
+    XtoolD,
+    XtoolE,
 }
 
 impl CompressionPreset {
     fn all() -> &'static [CompressionPreset] {
-        static ALL: [CompressionPreset; 15] = [
+        static ALL: [CompressionPreset; 18] = [
             CompressionPreset::Instant,
             CompressionPreset::HDDspeed,
             CompressionPreset::UltrafastSREP,
@@ -179,8 +201,10 @@ impl CompressionPreset {
             CompressionPreset::Bxtool,
             CompressionPreset::MaximumLOLZ,
             CompressionPreset::MXtoolLolz,
-            
-        ];
+            CompressionPreset::XtoolC,
+            CompressionPreset::XtoolD,
+            CompressionPreset::XtoolE,
+            ];
         &ALL
     }
 
@@ -188,43 +212,48 @@ impl CompressionPreset {
         match self {
             CompressionPreset::Instant => "Instant     (-m1)",
             CompressionPreset::HDDspeed => "HDD speed   (-m2)",
-            CompressionPreset::UltrafastSREP => "UltrafastSREP   (-m3d -s; -mc:lzma/lzma:max:8mb  -mc:rep/maxsrep)",
-            CompressionPreset::Ultrafastlolz => "Ultrafastlolz     (-m3d -s; -mc:lzma/lzma:max:8mb  -m=lolz:mtt0:mt12:d2m)",
+            CompressionPreset::UltrafastSREP => "UltrafastSREP   (M3+lzma+srep)",
+            CompressionPreset::Ultrafastlolz => "Ultrafastlolz     (M3+lzma+lolz)",
             CompressionPreset::Fastest => "Fastest     (-m3)",
-            CompressionPreset::FastSrepLZ => "Fast+Srep+LZ  (-m4d -s; -mc:lzma/lzma:max:32mb -mc:rep/maxsrep -mc$default,$obj:+precomp047:d1)",
+            CompressionPreset::FastSrepLZ => "Fast+Srep+LZ  (M4+lzma+srep+precomp)",
             CompressionPreset::Normal => "Normal      (-m4)",
-            CompressionPreset::NormalPrecomplzmadelta => "Normal+precomp+lzma (-m4 -mc:lzma/lzma:max:32mb -mc$default,$obj:+precomp047:d1 -mc-delta)",
+            CompressionPreset::NormalPrecomplzmadelta => "Normal+precomp+lzma (M4+lzma+precomp+delta)",
             CompressionPreset::Best => "Best        (-m5)",
             CompressionPreset::Maximum => "Maximum       (-m9d)",
-            CompressionPreset::Fastlolz => "fastlolz (-m4d -s; -mc:lzma/lzma:max:64mb  -mc$default,$obj:+precomp047:d1 -m=rep/maxsrep+lolz:mtt1:mt6:d8m)",        
-            CompressionPreset::MediumLOLZ => "MediumLOLZ (-m5d -s; -mc:lzma/lzma:max:96mb  -mc$default,$obj:+precomp047:d1 -m=rep/maxsrep+lolz:mtt0:mt6:d48m)",
-            CompressionPreset::Bxtool => "Bxtool (-m5d -s; -mc$default,$obj:+precomp047:d1 -mc:lzma/lzma:max:32mb -mxtool:c64mb:mpreflate:mzlib+xtool:dd3)",
-            CompressionPreset::MaximumLOLZ => "MaximumLOLZ (-m5d -s; -mc:lzma/lzma:max:192mb  -mc$default,$obj:+precomp047:d1 -m=rep/maxsrep+lolz:mtt0:mt6:d128m)",
-            CompressionPreset::MXtoolLolz => "MXtoolLolz (-m5d -s; precomp047+Lzma192MB+xtool+srep+preflate+mzlib+lolzfast+)",
+            CompressionPreset::Fastlolz => "fastlolz (M4+lzma+lolz+srep+precomp)",
+            CompressionPreset::MediumLOLZ => "MediumLOLZ (-M5+lzma+lolz+srep+precomp+lzma)",
+            CompressionPreset::Bxtool => "xtool (M6+lzma+xtool+srep+precomp)",
+            CompressionPreset::MaximumLOLZ => "MaximumLOLZ (M6+lzma+lolz+srep+precomp)",
+            CompressionPreset::MXtoolLolz => "xtoolfast+ (M6+lzma+xtool+lolz+srep+precomp)",
+            CompressionPreset::XtoolC => "xtoolmedium+       (M6+precomp+xtool+crilayla+razorx)",
+            CompressionPreset::XtoolD => "xtoolhigh       (M6+precomp+xtool+crilayla+ZSTD)",
+            CompressionPreset::XtoolE => "xtoolhigh       (m6+precomp+xtool+crilayla+lolz)",
         }
     }
-  
+    
     fn flags(&self) -> Vec<&'static str> {
         match self {
             CompressionPreset::Instant => vec!["-m1"],
             CompressionPreset::HDDspeed => vec!["-m2"],
-            CompressionPreset::Fastest => vec!["-m3"], 
+            CompressionPreset::Fastest => vec!["-m3"],
             CompressionPreset::UltrafastSREP => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-mc:rep/maxsrep"],
             CompressionPreset::Ultrafastlolz => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-m=lolz:mtt0:mt12:d2m"],
-            CompressionPreset::FastSrepLZ => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp047"],
+            CompressionPreset::FastSrepLZ => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp048"],
             CompressionPreset::Normal => vec!["-m4"],
-            CompressionPreset::NormalPrecomplzmadelta => vec!["-m4", "-mc:lzma/lzma:max:32mb", "-mc$default,$obj:+precomp047", "-mc-delta"],
+            CompressionPreset::NormalPrecomplzmadelta => vec!["-m4", "-mc:lzma/lzma:max:32mb", "-mc$default,$obj:+precomp048", "-mc-delta"],
             CompressionPreset::Best => vec!["-m5"],
             CompressionPreset::Maximum => vec!["-m9d"],
-            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb",  "-mc$default,$obj:+precomp047:d1", "-m=rep/maxsrep+lolz:mtt1:mt6:d8m"],
-            CompressionPreset::MaximumLOLZ => vec!["-m5d", "-s;", "-mc:lzma/lzma:max:192mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp047:d1", "-m=rep/maxsrep+lolz:mtt0:mt6:d128m"],
-            CompressionPreset::MediumLOLZ => vec!["-m5d", "-s;", "-mc:lzma/lzma:max:96mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp047:d1", "-m=rep/maxsrep+lolz:mtt0:mt6:d48m"],                  
-            CompressionPreset::MXtoolLolz => vec!["-m5d", "-s;", "-mc$default,$obj:+precomp047:d1", "-mc:lzma/lzma:max:192mb", "-mxtool:c256mb:mpreflate:mzlib+xtool:dd3+lolz:mtt0:mt6:d16m"],
-            CompressionPreset::Bxtool => vec!["-m5d", "-s;", "-mc$default,$obj:+precomp047:d1", "-mc:lzma/lzma:max:32mb", "-mxtool:c64mb:mpreflate:mzlib+xtool:dd3"],
-        
+            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb",  "-mc$default,$obj:+precomp048", "-m=rep/maxsrep+lolz:mtt1:mt6:d8m"],
+            CompressionPreset::MaximumLOLZ => vec!["-m6d", "-s;", "-mc:lzma/lzma:max:192mb",  "-mc$default,$obj:+precomp048", "-m=rep/maxsrep+lolz:mtt0:mt6:d128m"],
+            CompressionPreset::MediumLOLZ => vec!["-m5d", "-s;", "-mc:lzma/lzma:max:96mb",  "-mc$default,$obj:+precomp048", "-m=rep/maxsrep+lolz:mtt0:mt6:d48m"],
+            CompressionPreset::MXtoolLolz => vec!["-m6d", "-s;", "-mc$default,$obj:+precomp048", "-mc:lzma/lzma:max:192mb", "-mxtool:c256mb:mpreflate:mzlib+xtool:dd3+lolz:mtt0:mt6:d64m"],
+            CompressionPreset::Bxtool => vec!["-m6d", "-s;", "-mc$default,$obj:+precomp048", "-mc:lzma/lzma:max:32mb", "-mxtool:c64mb:mpreflate:mzlib+xtool:dd3"],
+            CompressionPreset::XtoolC => vec!["-m6d", "-s;", "-mc$default,$obj:+precomp048",  "-mxtool:o:c64mb:t75p:g90p:mkraken:mmermaid:3:mzlib:mlz4f,l6:mzstd:c32mb:mcrilayla:mreflate:l3,d16mb+razorx"],
+            CompressionPreset::XtoolD => vec!["-m6d", "-s;", "-mc$default,$obj:+precomp048", "-mxtool:o:c1024mb:t90p:g100p:mkraken:mmermaid:9:mzlib:mlz4f,l12:mzstd:c32mb:mcrilayla:mreflate:l10,d1024mb+zstd:-ultra:22:T0"],
+            CompressionPreset::XtoolE => vec!["-m6d", "-s;", "-mc$default,$obj:+precomp048", "-mxtool:o:c1024mb:t90p:g100p:mkraken:mmermaid:9:mzlib:mlz4f,l8:mzstd:c32mb:mcrilayla:mpreflate:mbrunsli:dd3:l6,d1024mb+lolz:mtt0:mt6:d256m"],
         }
     }
-}
+}    
 
 impl Default for MonCompresseurApp {
     fn default() -> Self {
@@ -243,18 +272,26 @@ impl Default for MonCompresseurApp {
             mode_compress: true,
             preset: CompressionPreset::Normal,
             output_path: initial_output_path,
-            log: Cow::Borrowed(""),
+            log_lines: Vec::new(),
             stats: None,
             preview_file: None,
             preview_content: String::new(),
-            progress: None,
+            progress_value: 0.0,
+            operation_status: String::new(),
+            is_processing: false,
             current_stats: None,
-            notification: None, // Initialize notification field
-            current_theme: Theme::default_themes()[0].clone(), // Dark theme par défaut
-            notification_rx: Arc::new(Mutex::new(None)), // Initialize notification receiver
+            notification: None,
+            current_theme: Theme::default_themes()[0].clone(),
+            command_rx: None,
+            command_tx: None,
             show_hash_window: false,
             selected_hash_type: HashType::CRC32,
             hash_result: None,
+            sys: System::new_all(),
+            cpu_usage: 0.0,
+            ram_usage_mb: 0,
+            ram_total_mb: 0,
+            arc_pid: None,
         }
     }
 }
@@ -262,7 +299,7 @@ impl Default for MonCompresseurApp {
 impl MonCompresseurApp {
     fn list_available_drives() -> Vec<PathBuf> {
         let mut drives = Vec::new();
-        
+
         if cfg!(windows) {
             // Windows: check drives from C: to Z:
             for letter in b'C'..=b'Z' {
@@ -275,7 +312,7 @@ impl MonCompresseurApp {
             // Linux/Unix: just add root
             drives.push(PathBuf::from("/"));
         }
-        
+
         drives
     }
 
@@ -292,9 +329,9 @@ impl MonCompresseurApp {
             if self.mode_compress {
                 self.selected.push(dir.to_path_buf());
             }
-            self.log.to_mut().push_str(&format!("Navigated to: {}\n", dir.display()));
+            self.log_lines.push(format!("Navigated to: {}\n", dir.display()));
         } else {
-            self.log.to_mut().push_str(&format!("Error: Cannot navigate to non-directory path: {}\n", dir.display()));
+            self.log_lines.push(format!("Error: Cannot navigate to non-directory path: {}\n", dir.display()));
         }
     }
 
@@ -303,7 +340,7 @@ impl MonCompresseurApp {
             self.history_index -= 1;
             self.current_dir = self.history[self.history_index].clone();
             self.selected.clear();
-            self.log.to_mut().push_str(&format!("Navigated back to: {}\n", self.current_dir.display()));
+            self.log_lines.push(format!("Navigated back to: {}\n", self.current_dir.display()));
         }
     }
 
@@ -312,7 +349,7 @@ impl MonCompresseurApp {
             self.history_index += 1;
             self.current_dir = self.history[self.history_index].clone();
             self.selected.clear();
-            self.log.to_mut().push_str(&format!("Navigated forward to: {}\n", self.current_dir.display()));
+            self.log_lines.push(format!("Navigated forward to: {}\n", self.current_dir.display()));
         }
     }
 
@@ -401,7 +438,7 @@ impl MonCompresseurApp {
 
                         // Afficher le menu contextuel
                         self.show_context_menu(ui, &p);
-                        
+
                         ui.label(if p.is_dir() { "Dossier" } else { "Fichier" });
                     });
                     ui.end_row();
@@ -425,12 +462,13 @@ impl MonCompresseurApp {
 
     fn execute_command(&mut self, mut cmd: Command, action: &str, ctx: &egui::Context) {
         println!("Commande exécutée : {:?}", cmd);
-        self.log.to_mut().push_str(&format!("Exécution de la commande : {:?}\n", cmd));
+        self.log_lines.push(format!("Exécution de la commande : {:?}\n", cmd));
 
         let action = action.to_string();
         let ctx_clone = ctx.clone();
         let (tx, rx) = mpsc::channel();
-        let _notification_rx = Arc::clone(&self.notification_rx);
+        self.command_rx = Some(rx);
+        self.command_tx = Some(tx.clone());
 
         thread::spawn(move || {
             cmd.stdout(std::process::Stdio::piped())
@@ -448,6 +486,7 @@ impl MonCompresseurApp {
                     for line in stdout_reader.lines() {
                         if let Ok(line) = line {
                             println!("{}", line);
+                            tx.send(CommandUpdate::LogOutput(line)).ok();
                             ctx_clone.request_repaint();
                         }
                     }
@@ -456,6 +495,7 @@ impl MonCompresseurApp {
                     for line in stderr_reader.lines() {
                         if let Ok(line) = line {
                             eprintln!("{}", line);
+                            tx.send(CommandUpdate::LogOutput(line)).ok();
                             ctx_clone.request_repaint();
                         }
                     }
@@ -469,7 +509,7 @@ impl MonCompresseurApp {
                                     level: NotificationLevel::Success,
                                     timestamp: std::time::Instant::now(),
                                 };
-                                tx.send(notification).ok();
+                                tx.send(CommandUpdate::ProcessCompleted(Ok(notification.message))).ok();
                             } else {
                                 Self::play_notification_sound();
                                 let notification = Notification {
@@ -477,7 +517,7 @@ impl MonCompresseurApp {
                                     level: NotificationLevel::Error,
                                     timestamp: std::time::Instant::now(),
                                 };
-                                tx.send(notification).ok();
+                                tx.send(CommandUpdate::ProcessCompleted(Err(notification.message))).ok();
                             }
                         }
                         Err(e) => {
@@ -487,7 +527,7 @@ impl MonCompresseurApp {
                                 level: NotificationLevel::Error,
                                 timestamp: std::time::Instant::now(),
                             };
-                            tx.send(notification).ok();
+                            tx.send(CommandUpdate::ProcessCompleted(Err(notification.message))).ok();
                         }
                     }
                 }
@@ -498,38 +538,33 @@ impl MonCompresseurApp {
                         level: NotificationLevel::Error,
                         timestamp: std::time::Instant::now(),
                     };
-                    tx.send(notification).ok();
+                    tx.send(CommandUpdate::ProcessCompleted(Err(notification.message))).ok();
                 }
             }
         });
-
-        // Store the receiver for later use
-        if let Ok(mut rx_guard) = self.notification_rx.lock() {
-            *rx_guard = Some(rx);
-        }
     }
 
     fn handle_action(&mut self, ctx: &egui::Context) {
-        self.log.to_mut().clear();
+        self.log_lines.clear();
         let exe = if cfg!(windows) { ".\\FreeArc\\arc.exe" } else { "./FreeArc/bin/arc" };
 
         if !std::path::Path::new(exe).exists() {
-            self.log.to_mut().push_str("Erreur : FreeArc n'est pas installé correctement\n");
+            self.log_lines.push("Erreur : FreeArc n'est pas installé correctement\n".to_string());
             return;
         }
 
         if self.mode_compress {
             // Mode compression
             if self.selected.is_empty() {
-                self.log.to_mut().push_str("Erreur : Aucune source sélectionnée pour la compression.\n");
+                self.log_lines.push("Erreur : Aucune source sélectionnée pour la compression.\n".to_string());
                 return;
             }
             if self.output_path.file_name().is_none() {
-                self.log.to_mut().push_str("Erreur : Chemin de sortie invalide.\n");
+                self.log_lines.push("Erreur : Chemin de sortie invalide.\n".to_string());
                 return;
             }
 
-            self.log.to_mut().push_str(&format!(
+            self.log_lines.push(format!(
                 "Compression des fichiers : {:?}\nVers : {}\n",
                 self.selected,
                 self.output_path.display()
@@ -552,18 +587,18 @@ impl MonCompresseurApp {
         } else {
             // Mode extraction
             if self.selected.len() != 1 {
-                self.log.to_mut().push_str("Erreur : Veuillez sélectionner une seule archive pour l'extraction.\n");
+                self.log_lines.push("Erreur : Veuillez sélectionner une seule archive pour l'extraction.\n".to_string());
                 return;
             }
 
             let archive_to_extract = &self.selected[0];
             if !archive_to_extract.exists() {
-                self.log.to_mut().push_str(&format!("Erreur : L'archive {} n'existe pas\n", archive_to_extract.display()));
+                self.log_lines.push(format!("Erreur : L'archive {} n'existe pas\n", archive_to_extract.display()));
                 return;
             }
 
             if let Some(dest) = rfd::FileDialog::new().set_title("Choisir le dossier d'extraction").pick_folder() {
-                self.log.to_mut().push_str(&format!(
+                self.log_lines.push(format!(
                     "Extraction de l'archive : {}\nVers : {}\n",
                     archive_to_extract.display(),
                     dest.display()
@@ -585,10 +620,33 @@ impl MonCompresseurApp {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Check for notifications at the start of the update
-        if let Ok(rx_guard) = self.notification_rx.lock() {
-            if let Some(rx) = rx_guard.as_ref() {
-                if let Ok(notification) = rx.try_recv() {
-                    self.notification = Some(notification);
+        if let Some(rx) = &self.command_rx {
+            if let Ok(update) = rx.try_recv() {
+                match update {
+                    CommandUpdate::LogOutput(log) => {
+                        self.log_lines.push(log);
+                    },
+                    CommandUpdate::Progress(progress) => {
+                        self.progress_value = progress;
+                    },
+                    CommandUpdate::ProcessCompleted(result) => {
+                        match result {
+                            Ok(message) => {
+                                self.notification = Some(Notification {
+                                    message,
+                                    level: NotificationLevel::Success,
+                                    timestamp: std::time::Instant::now(),
+                                });
+                            },
+                            Err(message) => {
+                                self.notification = Some(Notification {
+                                    message,
+                                    level: NotificationLevel::Error,
+                                    timestamp: std::time::Instant::now(),
+                                });
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -644,9 +702,9 @@ impl MonCompresseurApp {
                     // Mode selection group
                     ui.group(|ui| {
                         ui.horizontal(|ui| {
-                            ui.selectable_value(&mut self.mode_compress, true, 
+                            ui.selectable_value(&mut self.mode_compress, true,
                                 RichText::new("📦 Compresser").size(16.0));
-                            ui.selectable_value(&mut self.mode_compress, false, 
+                            ui.selectable_value(&mut self.mode_compress, false,
                                 RichText::new("📂 Extraire").size(16.0));
                         });
                     });
@@ -693,7 +751,7 @@ impl MonCompresseurApp {
                 ui.add_space(4.0);
                 ui.label(RichText::new(format!("📍 {}", self.current_dir.display())).size(14.0));
                 ui.add_space(8.0);
-                
+
                 egui::ScrollArea::vertical()
                     .auto_shrink([false; 2])
                     .show(ui, |ui| {
@@ -731,10 +789,10 @@ impl MonCompresseurApp {
                             self.selected.clear();
                             // Sélectionner automatiquement le dossier pour la compression
                             self.selected.push(dir);
-                            self.log.to_mut().push_str(&format!("Dossier sélectionné : {}\n", self.current_dir.display()));
+                            self.log_lines.push(format!("Dossier sélectionné : {}\n", self.current_dir.display()));
                         }
                     }
-                    
+
                     if ui.add(egui::Button::new(RichText::new("💾 Destination...").size(16.0))
                         .fill(Color32::from_rgb(66, 133, 244))
                         .min_size(egui::vec2(120.0, 32.0)))
@@ -786,7 +844,7 @@ egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
                 });
 
                 ui.add_space(16.0);
-                
+
                 // Logs avec style moderne
                 ui.heading(RichText::new("📝 Logs").size(20.0).strong());
                 ui.add_space(8.0);
@@ -794,7 +852,7 @@ egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
                     .auto_shrink([false; 2])
                     .show(ui, |ui| {
                         ui.add(
-                            egui::TextEdit::multiline(&mut self.log)
+                            egui::TextEdit::multiline(&mut self.log_lines.join("\n"))
                                 .desired_rows(12)
                                 .desired_width(f32::INFINITY)
                                 .font(egui::TextStyle::Monospace)
@@ -846,11 +904,8 @@ egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
     }
 
     fn show_progress(&mut self, ui: &mut egui::Ui) {
-        if let Some(progress) = &self.progress {
-            let percentage = (progress.processed_bytes as f32 / progress.total_bytes as f32) * 100.0;
-            ui.add(egui::ProgressBar::new(percentage / 100.0)
-                .text(format!("{:.1}% - Temps restant estimé: {:?}", percentage, progress.estimated_remaining)));
-        }
+        ui.add(egui::ProgressBar::new(self.progress_value)
+            .text(format!("{:.1}%", self.progress_value * 100.0)));
     }
 
     fn show_notification(&mut self, ui: &mut egui::Ui) {
@@ -895,12 +950,12 @@ egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
     fn apply_theme(&self, ctx: &egui::Context, theme: &Theme) {
         let mut style = (*ctx.style()).clone();
         let mut visuals = style.visuals.clone();
-        
+
         visuals.window_fill = theme.background_color;
         visuals.panel_fill = theme.secondary_color;
         visuals.widgets.noninteractive.fg_stroke.color = theme.text_color;
         visuals.selection.bg_fill = theme.accent_color;
-        
+
         style.visuals = visuals;
         ctx.set_style(style);
     }
@@ -944,7 +999,7 @@ egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
                 .resizable(false)
                 .show(ctx, |ui| {
                     ui.heading("Sélectionnez le type de hash");
-                    
+
                     ui.horizontal(|ui| {
                         if ui.selectable_label(self.selected_hash_type == HashType::CRC32, "CRC32").clicked() {
                             self.selected_hash_type = HashType::CRC32;
@@ -964,7 +1019,7 @@ egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
                     });
 
                     ui.add_space(10.0);
-                    
+
                     let selected_file = self.selected.first().cloned();
                     if let Some(file_path) = selected_file {
                         ui.label(format!("Fichier sélectionné : {}", file_path.display()));
@@ -995,12 +1050,12 @@ egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
                         ui.add_space(10.0);
                         ui.group(|ui| {
                             ui.label(format!("{} :", self.selected_hash_type.label()));
-                            let text_response = ui.add(
+                            let _text_response = ui.add(
                                 egui::TextEdit::singleline(&mut hash.as_str())
                                     .desired_width(f32::INFINITY)
                                     .font(egui::TextStyle::Monospace)
                             );
-                            
+
                             if ui.button("Copier").clicked() {
                                 ctx.copy_text(hash.clone());
                                 self.notification = Some(Notification {
@@ -1025,7 +1080,7 @@ egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
 
         if response.secondary_clicked() {
             let rect = response.rect;
-            let menu = MenuState::new(pos2(rect.left(), rect.bottom()));
+            let _menu = MenuState::new(pos2(rect.left(), rect.bottom()));
             if path.is_file() {
                 if ui.button("Calculer le hash...").clicked() {
                     self.selected = vec![path.to_path_buf()];
@@ -1076,7 +1131,7 @@ fn main() -> Result<(), eframe::Error> {
                     if let Ok(data) = std::fs::read(&path) {
                         println!("Calcul du hash pour : {}", path.display());
                         println!("----------------------------------------");
-                        
+
                         // Ne calculer que le hash sélectionné
                         for hash_type in hash_type.iter() {
                             match hash_type {
@@ -1105,7 +1160,7 @@ fn main() -> Result<(), eframe::Error> {
                                 }
                             }
                         }
-                        
+
                         println!("----------------------------------------");
                         println!("Appuyez sur une touche pour continuer...");
                         let mut input = String::new();
@@ -1172,7 +1227,7 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     eframe::run_native(
-        "stelarc V1.3.4",
+        "stelarc V2",
         native_options,
         Box::new(|_creation_context| Ok(Box::new(MonCompresseurApp::default()))),
     )
