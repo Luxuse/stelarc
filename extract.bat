@@ -1,9 +1,9 @@
 @echo off
-chcp 65001 > nul
-
+chcp 65001 >nul
+setlocal enabledelayedexpansion
 cls
 
-REM === Affiche la bannière ASCII si banner.txt existe ===
+:: ───────── Bannière ─────────
 if exist "%~dp0banner.txt" (
     echo(
     type "%~dp0banner.txt"
@@ -12,61 +12,58 @@ if exist "%~dp0banner.txt" (
     echo ====== DEBUT DE L’EXTRACTION ======
 )
 
-REM === Vérifie l’argument ===
+:: ───────── Vérifications ─────────
 if "%~1"=="" (
-    echo Erreur : Aucun fichier spécifié.
-    pause
-    exit /b 1
+    echo Erreur : aucun fichier spécifié.
+    pause & exit /b 1
 )
-
-REM === Vérifie l’existence du fichier ===
 if not exist "%~1" (
-    echo Erreur : Le fichier "%~1" est introuvable.
-    pause
-    exit /b 1
+    echo Erreur : le fichier "%~1" est introuvable.
+    pause & exit /b 1
 )
 
-REM === Normalise le chemin du fichier à extraire et récupère sa taille ===
-set "inputPath=%~1"
-for %%F in ("%inputPath%") do (
+:: Infos fichier
+for %%F in ("%~1") do (
     set "normalizedPath=%%~fF"
     set "arcSize=%%~zF"
     set "fileExt=%%~xF"
     set "fileDir=%%~dpF"
 )
 
-REM === Affiche la taille de l’archive ===
-set /a arcSizeMB=%arcSize% / 1048576
+set /a arcSizeMB=arcSize/1048576
 echo(
-echo Fichier détecté : %normalizedPath%
-echo Taille de l’archive : %arcSizeMB% Mo
+echo Fichier : !normalizedPath!
+echo Taille  : !arcSizeMB! Mo
 echo(
-echo Début de l’extraction, veuillez patienter...
+echo Début de l’extraction…
+echo(
 
-REM === Vérifie l'extension du fichier et exécute l'extraction appropriée ===
-if /i "%fileExt%" == ".7z" (
-    echo Extraction avec 7z...
-    "C:\ProgramData\stelarc\Freearc\7z.exe" x "%normalizedPath%" -o"%fileDir%" -y || (
-        echo Erreur : L’extraction avec 7z a échoué.
-        pause
-        exit /b 1
-    )
-) else if /i "%fileExt%" == ".zip" (
-    echo Extraction avec 7z...
-    "C:\ProgramData\stelarc\Freearc\7z.exe" x "%normalizedPath%" -o"%fileDir%" -y || (
-        echo Erreur : L’extraction avec 7z a échoué.
-        pause
-        exit /b 1
-    )
+:: ───────── Extraction suivant l’extension ─────────
+if /i "!fileExt!"==".7z" (
+    echo Extraction avec 7-Zip…
+    "C:\ProgramData\stelarc\FreeArc\7z.exe" x "!normalizedPath!" -o"!fileDir!" -y || goto :ERR
+) else if /i "!fileExt!"==".zip" (
+    echo Extraction avec 7-Zip…
+    "C:\ProgramData\stelarc\FreeArc\7z.exe" x "!normalizedPath!" -o"!fileDir!" -y || goto :ERR
+) else if /i "!fileExt!"==".stel" (
+    echo Extraction avec Sharky…
+    rem --- retirer le \ final ---
+    set "outDir=!fileDir:~0,-1!"
+    "C:\ProgramData\stelarc\sharky\sharky.exe" -d -i "!normalizedPath!" -o "!outDir!" || goto :ERR
 ) else (
-    echo Extraction avec arc.exe...
-    "C:\ProgramData\stelarc\FreeArc\arc.exe" x "%normalizedPath%" -o+ || (
-        echo Erreur : L’extraction avec arc.exe a échoué.
-        pause
-        exit /b 1
-    )
+
+    echo Extraction avec FreeArc…
+    "C:\ProgramData\stelarc\FreeArc\arc.exe" x "!normalizedPath!" -o+ || goto :ERR
 )
 
+:: ───────── Fin ─────────
 echo(
-echo Extraction terminée avec succès.
+echo Extraction terminee avec succes.
 pause
+exit /b 0
+
+:ERR
+echo(
+echo Erreur : l’extraction a echoue.
+pause
+exit /b 1

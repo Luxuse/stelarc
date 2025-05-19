@@ -26,6 +26,7 @@ STELARC - What's new in the latest version
 - add crilayla, oo2mtc...
 - fix presets
 - add of Eloslicer for cuting folder in pices
+- sharky
 
 - REG -
 - 7zip compression and extract by : Igor Pavlov
