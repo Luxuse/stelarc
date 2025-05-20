@@ -42,10 +42,30 @@ echo(
 if /i "!fileExt!"==".7z" (
     echo Extraction avec 7-Zip…
     "C:\ProgramData\stelarc\FreeArc\7z.exe" x "!normalizedPath!" -o"!fileDir!" -y || goto :ERR
-) else if /i "!fileExt!"==".zip" (
+) else if /i "!fileExt!"==".bz2" (
     echo Extraction avec 7-Zip…
     "C:\ProgramData\stelarc\FreeArc\7z.exe" x "!normalizedPath!" -o"!fileDir!" -y || goto :ERR
 ) else if /i "!fileExt!"==".stel" (
+    echo Extraction avec Sharky…
+    rem --- retirer le \ final ---
+    set "outDir=!fileDir:~0,-1!"
+    "C:\ProgramData\stelarc\sharky\sharky.exe" -d -i "!normalizedPath!" -o "!outDir!" || goto :ERR
+) else if /i "!fileExt!"==".gz" (
+    echo Extraction avec Sharky…
+    rem --- retirer le \ final ---
+    set "outDir=!fileDir:~0,-1!"
+    "C:\ProgramData\stelarc\sharky\sharky.exe" -d -i "!normalizedPath!" -o "!outDir!" || goto :ERR
+) else if /i "!fileExt!"==".tar" (
+    echo Extraction avec Sharky…
+    rem --- retirer le \ final ---
+    set "outDir=!fileDir:~0,-1!"
+    "C:\ProgramData\stelarc\sharky\sharky.exe" -d -i "!normalizedPath!" -o "!outDir!" || goto :ERR
+) else if /i "!fileExt!"==".zip" (
+    echo Extraction avec Sharky…
+    rem --- retirer le \ final ---
+    set "outDir=!fileDir:~0,-1!"
+    "C:\ProgramData\stelarc\sharky\sharky.exe" -d -i "!normalizedPath!" -o "!outDir!" || goto :ERR
+) else if /i "!fileExt!"==".rar" (
     echo Extraction avec Sharky…
     rem --- retirer le \ final ---
     set "outDir=!fileDir:~0,-1!"
