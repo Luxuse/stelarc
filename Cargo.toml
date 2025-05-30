@@ -1,6 +1,6 @@
 [package]
 name = "stelarc"
-version = "1.3.4"
+version = "3.0.0"
 edition = "2024"
 authors = ["Luxuse"]
 repository = "https://github.com/Luxuse/stelarc"
@@ -13,7 +13,7 @@ winres = "0.1"
 # Interface graphique
 egui = "0.31.1"
 eframe = "0.31.1"
-
+sysinfo = "0.35.1"
 # Système de fichiers et dialogues
 rfd = "0.15.3"
 

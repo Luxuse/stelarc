@@ -181,11 +181,17 @@ enum CompressionPreset {
     XtoolC,
     XtoolD,
     XtoolE,
+    XtoolF,
+    XtoolG,
+    Xtoolh,
+    Xtoolj,
+    Xtoolk,
+
 }
 
 impl CompressionPreset {
     fn all() -> &'static [CompressionPreset] {
-        static ALL: [CompressionPreset; 18] = [
+        static ALL: [CompressionPreset; 23] = [
             CompressionPreset::Instant,
             CompressionPreset::HDDspeed,
             CompressionPreset::UltrafastSREP,
@@ -204,23 +210,29 @@ impl CompressionPreset {
             CompressionPreset::XtoolC,
             CompressionPreset::XtoolD,
             CompressionPreset::XtoolE,
+            CompressionPreset::XtoolG,
+            CompressionPreset::XtoolF,
+            CompressionPreset::Xtoolh,
+            
+            CompressionPreset::Xtoolj,
+            CompressionPreset::Xtoolk,
             ];
         &ALL
     }
 
     fn label(&self) -> &'static str {
         match self {
-            CompressionPreset::Instant => "Instant     (-m1)",
+            CompressionPreset::Instant => "Instant (-m1)",
             CompressionPreset::HDDspeed => "HDD speed   (-m2)",
             CompressionPreset::UltrafastSREP => "UltrafastSREP   (M3+lzma+srep)",
             CompressionPreset::Ultrafastlolz => "Ultrafastlolz     (M3+lzma+lolz)",
             CompressionPreset::Fastest => "Fastest     (-m3)",
-            CompressionPreset::FastSrepLZ => "Fast+Srep+LZ  (M4+lzma+srep+precomp)",
+            CompressionPreset::FastSrepLZ => "Fast+Srep+LZ  (M4+lzma+srep+preshark)",
             CompressionPreset::Normal => "Normal      (-m4)",
-            CompressionPreset::NormalPrecomplzmadelta => "Normal+precomp+lzma (M4+lzma+precomp+delta)",
+            CompressionPreset::NormalPrecomplzmadelta => "Normal+preshark+lzma (M4+lzma+preshark+delta)",
             CompressionPreset::Best => "Best        (-m5)",
             CompressionPreset::Maximum => "Maximum       (-m9d)",
-            CompressionPreset::Fastlolz => "fastlolz (M4+lzma+lolz+srep+precomp)",
+            CompressionPreset::Fastlolz => "fastlolz (M4+lzma+lolz+srep+preshark)",
             CompressionPreset::MediumLOLZ => "MediumLOLZ (-M5+lzma+lolz+srep+precomp+lzma)",
             CompressionPreset::Bxtool => "xtool (M6+lzma+xtool+srep+precomp)",
             CompressionPreset::MaximumLOLZ => "MaximumLOLZ (M6+lzma+lolz+srep+precomp)",
@@ -228,29 +240,41 @@ impl CompressionPreset {
             CompressionPreset::XtoolC => "xtoolmedium+       (M6+precomp+xtool+crilayla+razorx)",
             CompressionPreset::XtoolD => "xtoolhigh       (M6+precomp+xtool+crilayla+ZSTD)",
             CompressionPreset::XtoolE => "xtoolhigh       (m6+precomp+xtool+crilayla+lolz)",
+            CompressionPreset::XtoolG => "Preshark      (m6+preshark+xtool+crilayla+razorx+srep)",
+            CompressionPreset::XtoolF => "Preshark        (-m6+preshark+xtool+Berserk+crilayla+srep)",
+            CompressionPreset::Xtoolh => "Preshark       (-m6+preshark+xtool+srep)",
+            CompressionPreset::Xtoolj => "Preshark (-m6+preshark+xtooldd3+ZSTD)",
+            CompressionPreset::Xtoolk => "Preshark (-m6+preshark+xtooldd3+LZMA)",
+            }
+    
         }
-    }
     
     fn flags(&self) -> Vec<&'static str> {
         match self {
             CompressionPreset::Instant => vec!["-m1"],
             CompressionPreset::HDDspeed => vec!["-m2"],
             CompressionPreset::Fastest => vec!["-m3"],
-            CompressionPreset::UltrafastSREP => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-mc:rep/maxsrep"],
-            CompressionPreset::Ultrafastlolz => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-m=lolz:mtt0:mt12:d2m"],
-            CompressionPreset::FastSrepLZ => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:8mb", "-mc:rep/maxsrep", "-mc$default,$obj:+precomp048"],
+            CompressionPreset::UltrafastSREP => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:16mb", "-mc:rep/maxsrep"],
+            CompressionPreset::Ultrafastlolz => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:16mb", "-m=lolz:mtt0:mt12:d2m"],
+            CompressionPreset::FastSrepLZ => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:16mb", "-mc:rep/maxsrep", "-mc$default,$obj:+preshark"],
             CompressionPreset::Normal => vec!["-m4"],
-            CompressionPreset::NormalPrecomplzmadelta => vec!["-m4", "-mc:lzma/lzma:max:32mb", "-mc$default,$obj:+precomp048", "-mc-delta"],
+            CompressionPreset::NormalPrecomplzmadelta => vec!["-m4", "-mc:lzma/lzma:max:32mb", "-mc$default,$obj:+preshark", "-mc-delta"],
             CompressionPreset::Best => vec!["-m5"],
-            CompressionPreset::Maximum => vec!["-m9d"],
-            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb",  "-mc$default,$obj:+precomp048", "-m=rep/maxsrep+lolz:mtt1:mt6:d8m"],
-            CompressionPreset::MaximumLOLZ => vec!["-m6d", "-s;", "-mc:lzma/lzma:max:192mb",  "-mc$default,$obj:+precomp048", "-m=rep/maxsrep+lolz:mtt0:mt6:d128m"],
-            CompressionPreset::MediumLOLZ => vec!["-m5d", "-s;", "-mc:lzma/lzma:max:96mb",  "-mc$default,$obj:+precomp048", "-m=rep/maxsrep+lolz:mtt0:mt6:d48m"],
-            CompressionPreset::MXtoolLolz => vec!["-m6d", "-s;", "-mc$default,$obj:+precomp048", "-mc:lzma/lzma:max:192mb", "-mxtool:c256mb:mpreflate:mzlib+xtool:dd3+lolz:mtt0:mt6:d64m"],
+            CompressionPreset::Maximum => vec!["-m9d","-s;"],
+            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb",  "-mc$default,$obj:+preshark", "-m=lolz:mtt1:mt6:d8m"],
+            CompressionPreset::MaximumLOLZ => vec!["-m6d", "-s;", "-mc:lzma/lzma:max:192mb",  "-mc$default,$obj:+precomp048", "-m=lolz:mtt0:mt6:d128m"],
+            CompressionPreset::MediumLOLZ => vec!["-m5d", "-s;", "-mc:lzma/lzma:max:96mb",  "-mc$default,$obj:+precomp048", "-m=lolz:mtt0:mt6:d48m"],
+            CompressionPreset::MXtoolLolz => vec!["-m6d", "-s;", "-mc$default,$obj:+precomp048", "-mc:lzma/lzma:max:192mb", "-mxtool:c256mb:mpreflate:mzlib+lolz:mtt0:mt6:d64m"],
             CompressionPreset::Bxtool => vec!["-m6d", "-s;", "-mc$default,$obj:+precomp048", "-mc:lzma/lzma:max:32mb", "-mxtool:c64mb:mpreflate:mzlib+xtool:dd3"],
             CompressionPreset::XtoolC => vec!["-m6d", "-s;", "-mc$default,$obj:+precomp048",  "-mxtool:o:c64mb:t75p:g90p:mkraken:mmermaid:3:mzlib:mlz4f,l6:mzstd:c32mb:mcrilayla:mreflate:l3,d16mb+razorx"],
             CompressionPreset::XtoolD => vec!["-m6d", "-s;", "-mc$default,$obj:+precomp048", "-mxtool:o:c1024mb:t90p:g100p:mkraken:mmermaid:9:mzlib:mlz4f,l12:mzstd:c32mb:mcrilayla:mreflate:l10,d1024mb+zstd:-ultra:22:T0"],
             CompressionPreset::XtoolE => vec!["-m6d", "-s;", "-mc$default,$obj:+precomp048", "-mxtool:o:c1024mb:t90p:g100p:mkraken:mmermaid:9:mzlib:mlz4f,l8:mzstd:c32mb:mcrilayla:mpreflate:mbrunsli:dd3:l6,d1024mb+lolz:mtt0:mt6:d256m"],
+            CompressionPreset::XtoolG => vec!["-m6d", "-s;", "-mc$default,$obj:+preshark", "-mxtool:o:c64mb:t75p:g90p:mkraken:mmermaid:3:mzlib:mlz4f,l6:mzstd:c32mb:mcrilayla:mreflate:l3,d16mb+xtool:dd3+razorx"],
+            CompressionPreset::XtoolF => vec!["-m6d", "-s;", "-mc$default,$obj:+preshark", "-mxtool:o:c64mb:t75p:g90p:mkraken:mmermaid:3:mzlib:mlz4f,l6:mzstd:c32mb:mcrilayla:mreflate:l3,d16mb+berserk+rep/maxsrep"],
+            CompressionPreset::Xtoolh => vec!["-m6d", "-s;", "-mc$default,$obj:+preshark", "-mxtool:o:c64mb:t75p:g90p:mkraken:mmermaid:3:mzlib:mlz4f,l6:mzstd:c32mb:mcrilayla:mreflate:l3,d16mb+rep/maxsrep"],
+            CompressionPreset::Xtoolj => vec!["-m6d", "-s;", "-mc$default,$obj:+preshark", "-mxtool:o:c64mb:t75p:g90p:mkraken:mmermaid:3:mzlib:mlz4f,l6:mzstd:c32mb:mcrilayla:mreflate:l3,d16mb+xtool:dd3+zstd:-ultra:22:T0"],
+            CompressionPreset::Xtoolk => vec!["-m6d", "-s;", "-mc$default,$obj:+preshark", "-mxtool:o:c64mb:t75p:g90p:mkraken:mmermaid:3:mzlib:mlz4f,l6:mzstd:c32mb:mcrilayla:mreflate:l3,d16mb+xtool:dd3+4x4:b256mb:lzma:ultra:bt4:fb273:lc8:mc1000000:256mb"],
+        
         }
     }
 }    
@@ -564,18 +588,33 @@ impl MonCompresseurApp {
                 return;
             }
 
+            // Obtenir le dossier de travail actuel
+            let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            
+            // Convertir les chemins sélectionnés en chemins relatifs
+            let relative_paths: Vec<PathBuf> = self.selected.iter()
+                .filter_map(|path| {
+                    path.strip_prefix(&current_dir).ok()
+                        .or_else(|| Some(path.as_path()))
+                        .map(|p| p.to_path_buf())
+                })
+                .collect();
+
             self.log_lines.push(format!(
                 "Compression des fichiers : {:?}\nVers : {}\n",
-                self.selected,
+                relative_paths,
                 self.output_path.display()
             ));
 
             let mut cmd = Command::new(exe);
             cmd.arg("a");
             cmd.arg(&self.output_path);
-            for item in &self.selected {
+            
+            // Utiliser les chemins relatifs pour la compression
+            for item in &relative_paths {
                 cmd.arg(item);
             }
+            
             for flag in self.preset.flags() {
                 cmd.arg(flag);
             }
@@ -1227,7 +1266,7 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     eframe::run_native(
-        "stelarc V2",
+        "stelarc V3",
         native_options,
         Box::new(|_creation_context| Ok(Box::new(MonCompresseurApp::default()))),
     )
