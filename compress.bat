@@ -63,6 +63,7 @@ echo   2. m3 (equilibre)
 echo   3. m5 (bon compromis)
 echo   4. m7 (meilleure compression)
 echo   5. m9 (ultra)
+echo   6. Berserk (experimantale)
 echo.
 set "mode="
 set /p "lvl=Votre choix (1-5) : "
@@ -71,6 +72,7 @@ if "%lvl%"=="2" set "mode=m3d"
 if "%lvl%"=="3" set "mode=m5d"
 if "%lvl%"=="4" set "mode=m7d"
 if "%lvl%"=="5" set "mode=m9d"
+if "%lvl%"=="6" set "mode=m=berserk+rep/maxsrep"
 if not defined mode (
   echo Niveau invalide.
   pause
