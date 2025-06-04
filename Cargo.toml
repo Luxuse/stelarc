@@ -1,6 +1,6 @@
 [package]
 name = "stelarc"
-version = "3.0.0"
+version = "3.7.0"
 edition = "2024"
 authors = ["Luxuse"]
 repository = "https://github.com/Luxuse/stelarc"
