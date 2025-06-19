@@ -113,6 +113,7 @@ if /i "!fileExt!"==".bz2" (
     set "outDir=!fileDir:~0,-1!"
     "C:\ProgramData\stelarc\sharky\sharky.exe" -d -i "!normalizedPath!" -o "!outDir!" || goto :ERR
 
+
 ) else (
 
     echo Extraction avec FreeArc…

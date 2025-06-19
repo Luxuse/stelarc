@@ -1,12 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-REM ───────────── Bannière ─────────────
-if exist "%~dp0banner.txt" (
-  for /f "delims=" %%L in ("%~dp0banner.txt") do echo %%L
-) else (
-  echo ====== DEBUT DE LA COMPRESSION ======
-)
+
 
 REM ───────────── Vérification des arguments ─────────────
 if "%~1"=="" (
@@ -30,11 +25,19 @@ set "baseName=%~n1"
 
 :FORMAT_MENU
 cls
+
+:: ───────── Bannière ─────────
+if exist "%~dp0banner.txt" (
+    echo(
+    type "%~dp0banner.txt"
+
+
 echo.
 echo Choisissez le format de compression :
 echo   1. FreeArc classique (.arc)
 echo   2. 7-Zip classique    (.7z)
 echo   3. Sharky (.stel)
+echo   4. Pixel speed   (.Pixel)
 echo.
 set "fmt="
 set /p "fmt=Entrez votre choix (1-4) : "
@@ -48,6 +51,9 @@ if "%fmt%"=="1" (
 ) else if "%fmt%"=="3" (
   set "ext=stel"
   goto SHARKY_LEVEL_MENU
+) else if "%fmt%"=="4" (
+  set "ext=Pixel"
+  goto PIXEL_LEVEL_MENU
 ) else (
   echo Choix invalide.
   pause
@@ -156,6 +162,38 @@ echo Compression de !inputNameExt! vers !baseName!.!ext!...
     -z !zstd_level! ^
     -i "!inputNameExt!" ^
     -o "!baseName!.!ext!" || goto ERR
+
+
+
+:PIXEL_LEVEL_MENU
+cls
+echo.
+echo Niveau de compression pour la sauvegarde - choisissez le niveau :
+echo   1. lz4 (tres rapide)
+echo   2. zstd (rapide)
+echo   3. M2 (tres rapide)
+echo   4. Razor (tres lent)
+echo.
+set "mode="
+set /p "lvl=Votre choix (1-2) : "
+
+if "%lvl%"=="1" (
+    set "mode=mlz4"
+) else if "%lvl%"=="2" (
+    set "mode=mzstd:5:T0"
+) else if "%lvl%"=="4" (
+    set "mode=mrazorx"
+) else (
+    echo Choix invalide.
+    pause
+    goto PIXEL_LEVEL_MENU
+)
+
+echo.
+echo Compression %mode% vers %baseName%.%ext%...
+"C:\ProgramData\stelarc\FreeArc\arc.exe" a -%mode% "%baseName%.%ext%" "%inputNameExt%" || goto ERR
+goto SUCCESS
+
 
 
 :SUCCESS
