@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::mpsc;
 use rodio;
 use rodio::Source;
-use sysinfo::{System, Process}; // <-- Correction de l'import
+use sysinfo::System; // <-- Correction de l'import
 
 
 // Import unique du trait Digest via sha3
@@ -158,6 +158,14 @@ struct MonCompresseurApp {
     ram_usage_mb: u64,
     ram_total_mb: u64,
     arc_pid: Option<u32>,
+
+    // Nouveau : Compteur de temps
+    compression_start_time: Option<std::time::Instant>,
+    elapsed_time: String,
+    last_elapsed_time: Option<String>, // Ajout pour garder le temps final
+
+    // Ajout du champ pour le défilement automatique des logs
+    log_scroll_to_end: bool,  // Add this new field
 }
 
 /// Presets disponibles pour FreeArc, incluant des modes variés
@@ -176,8 +184,12 @@ enum CompressionPreset {
     MediumLOLZ,
     Maximum,
     MaximumLOLZ,
+   
+    Xtooln,
+    Xtool2,
     XtoolF,
     XtoolG,
+    XtoolLOL,
     Xtoolh,
     Xtoolj,
     Xtoolk,
@@ -187,7 +199,7 @@ enum CompressionPreset {
 
 impl CompressionPreset {
     fn all() -> &'static [CompressionPreset] {
-        static ALL: [CompressionPreset; 20] = [
+        static ALL: [CompressionPreset; 23] = [
             CompressionPreset::Instant,
             CompressionPreset::HDDspeed,
             CompressionPreset::UltrafastSREP,
@@ -201,6 +213,10 @@ impl CompressionPreset {
             CompressionPreset::Maximum,
             CompressionPreset::MediumLOLZ,
             CompressionPreset::MaximumLOLZ,
+           
+            CompressionPreset::Xtooln,
+            CompressionPreset::Xtool2,
+            CompressionPreset::XtoolLOL,
             CompressionPreset::XtoolG,
             CompressionPreset::XtoolF,
             CompressionPreset::Xtoolh,
@@ -216,24 +232,27 @@ impl CompressionPreset {
             CompressionPreset::Instant => "Instant (-m1)",
             CompressionPreset::HDDspeed => "HDD speed   (-m2)",
             CompressionPreset::UltrafastSREP => "UltrafastSREP   (M3+lzma+srep)",
-            CompressionPreset::Ultrafastlolz => "Ultrafastlolz     (M3+lzma+lolz)",
+            CompressionPreset::Ultrafastlolz => "lz4",
             CompressionPreset::Fastest => "Fastest     (-m3)",
-            CompressionPreset::FastSrepLZ => "Fast+Srep+LZ  (M4+lzma+srep+preshark)",
+            CompressionPreset::FastSrepLZ => "hightsrep  (M5+lzma+srep)",
             CompressionPreset::Normal => "Normal      (-m4)",
             CompressionPreset::NormalPrecomplzmadelta => "Normal+preshark+lzma (M4+lzma+preshark+delta)",
             CompressionPreset::Best => "Best        (-m5)",
             CompressionPreset::Maximum => "Maximum       (-m9d)",
-            CompressionPreset::Fastlolz => "fastlolz (M4+lzma+lolz+srep+preshark)",
-            CompressionPreset::MediumLOLZ => "MediumLOLZ (-M5+lzma+lolz+srep+precomp+lzma)",
-            CompressionPreset::MaximumLOLZ => "MaximumLOLZ (M6+lzma+lolz+srep+precomp)",
-            CompressionPreset::XtoolG => "Xtool[MGDeflate]+kraken,mmermaid+razorx",
-            CompressionPreset::XtoolF => "Xtool[preflate]+kraken,mmermaid+zstd",
+            CompressionPreset::Fastlolz => "xtool+luna",
+            CompressionPreset::MediumLOLZ => "Xtool+Lzma",
+            CompressionPreset::MaximumLOLZ => "M6PRECOMP+srep (M6+lzma+precomp+srep)",
+            CompressionPreset::XtoolG => "Xtool[MGDeflate]+kraken+razorx",
+            CompressionPreset::XtoolF => "Xtool[preflate]+kraken+zstd",
             CompressionPreset::Xtoolh => "Xtool[reflate]+LOLZ",
             CompressionPreset::Xtoolj => "Xtool[preflate]+LZMA",
             CompressionPreset::Xtoolk => "Xtool[reflate]+zstd ",
-            CompressionPreset::Experimental3 => "LZMA+xtool (lzma4x4ULTRA+XTOOL)",
+            CompressionPreset::Xtooln => "Xtool[preflate]+razor",
+            CompressionPreset::Experimental3 => "xtool+LOLZ_FAST",
             CompressionPreset::Experimental => "berserk+srep (berserk+srep)",
-        
+            CompressionPreset::XtoolLOL => "Xtool[MGDeflate]+kraken6+lzma",
+            CompressionPreset::Xtool2 => "Xtool[preflate]+kraken+LOLZ_NORMAL",
+           
         }
     
         }
@@ -244,22 +263,25 @@ impl CompressionPreset {
             CompressionPreset::HDDspeed => vec!["-m2"],
             CompressionPreset::Fastest => vec!["-m3"],
             CompressionPreset::UltrafastSREP => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:16mb", "-mc:rep/maxsrep"],
-            CompressionPreset::Ultrafastlolz => vec!["-m3d", "-s;", "-mc:lzma/lzma:max:16mb", "-m=lolz:mtt0:mt12:d2m"],
-            CompressionPreset::FastSrepLZ => vec!["-m3d", "-s;", "-mc$default,$obj:+preshark", "-mc:lzma/lzma:max:16mb", "-mc:rep/maxsrep"],
+            CompressionPreset::Ultrafastlolz => vec!["-i2", "-m=lz4"],
+            CompressionPreset::FastSrepLZ => vec!["-i2", "-m5d", "-s;", "-mc:lzma/lzma:max:64mb", "-mc:rep/maxsrep"],
             CompressionPreset::Normal => vec!["-m4"],
             CompressionPreset::NormalPrecomplzmadelta => vec!["-m4", "-mc:lzma/lzma:max:32mb", "-mc$default,$obj:+preshark", "-mc-delta"],
             CompressionPreset::Best => vec!["-m5"],
-            CompressionPreset::Maximum => vec!["-m9d","-s;"],
-            CompressionPreset::Fastlolz => vec!["-m4d", "-s;", "-mc:lzma/lzma:max:64mb",  "-mc$default,$obj:+preshark", "-m=lolz:mtt1:mt6:d8m"],
-            CompressionPreset::MaximumLOLZ => vec!["-m6d", "-s;", "-mc:lzma/lzma:max:192mb",  "-mc$default,$obj:+precomp048", "-m=lolz:mtt0:mt6:d128m"],
-            CompressionPreset::MediumLOLZ => vec!["-m5d", "-s;", "-mc:lzma/lzma:max:96mb",  "-mc$default,$obj:+precomp048", "-m=lolz:mtt0:mt6:d48m"],
+            CompressionPreset::Maximum => vec!["-i2", "-m9d","-s;"],
+            CompressionPreset::Fastlolz => vec!["-i2", "-m=xtool:o:t100p:g100p:mzlib:mpreflate:dd3+luna:dtb1:d256m:mtt1:mt16:mc1023"],
+            CompressionPreset::MaximumLOLZ => vec!["-i2", "-m6d", "-s;", "-mc:lzma/lzma:max:32mb",  "-mc$default,$obj:+precomp048x", "-mc:rep/maxsrep"],
+            CompressionPreset::MediumLOLZ => vec!["-i2", "-m=xtool:o:t90p:g90p:mzlib:mpreflate:dd3+lzma:a1:mfbt4:fb273:mc1000000000:lc8:192mb"],
             CompressionPreset::Experimental => vec!["-m=berserk+rep/maxsrep"],
-            CompressionPreset::XtoolG => vec!["-m=xtool:o:t90p:g90p:mkraken:mmermaid:3:mzlib:mgdeflate:dd3:l1+razorx"],
-            CompressionPreset::XtoolF => vec!["-m=xtool:o:t90p:g90p:mkraken:mmermaid:3:mpreflate:dd3+zstd:-ultra:22:T0"],
-            CompressionPreset::Xtoolh => vec!["-m=xtool:o:t90p:g90p:mzlib:mreflate:dd3+lolz:mtt0:mt6:d32m"],
-            CompressionPreset::Xtoolj => vec!["-m=xtool:o:t90p:g90p:mzlib:mpreflate:dd3+4x4:b256mb:lzma:ultra:bt4:fb273:lc8:mc1000000:256mb"],
-            CompressionPreset::Xtoolk => vec!["-m=xtool:o:t90p:g90p:mzlib:mreflate:dd3+zstd:10:T0"],
-            CompressionPreset::Experimental3 => vec![ "-m=xtool:c64mb:mpreflate:mzlib+xtool:dd3+4x4:b64mb:lzma:ultra:bt4:fb273:lc8:mc1000000:256mb"],
+            CompressionPreset::XtoolG => vec!["-i2", "-m=xtool:o:t90p:g90p:mkraken:3:mzlib:mgdeflate:dd3:l1+razorx"],
+            CompressionPreset::XtoolLOL => vec!["-i2", "-m=xtool:o:t90p:g90p:mkraken:6:mzlib:mgdeflate:dd3+4x4:b64mb:lzma:ultra:bt4:fb273:lc8:mc1000000:256mb"],
+            CompressionPreset::XtoolF => vec!["-i2", "-m=xtool:o:t90p:g90p:mkraken:3:mpreflate:dd3+zstdx:-ultra:22:T0"],
+            CompressionPreset::Xtool2 => vec!["-i2", "-m=xtool:o:t90p:g100p:mkraken:4:mzlib:mpreflate:dd4+LOLZ_NORMAL"],
+            CompressionPreset::Xtoolh => vec!["-i2", "-m=xtool:o:t90p:g90p:mzlib:mpreflate:dd3+LOLZ_NORMAL"],
+            CompressionPreset::Xtoolj => vec!["-i2", "-m=xtool:o:t90p:g90p:mzlib:mpreflate:dd3+4x4:b256mb:lzma:ultra:bt4:fb273:lc8:mc1000000:256mb"],
+            CompressionPreset::Xtooln => vec!["-i2", "-m=xtool:o:t90p:g90p:mzlib:mpreflate:dd3+razorx"],
+            CompressionPreset::Xtoolk => vec!["-i2", "-m=xtool:o:t90p:g90p:mzlib:mpreflate:dd3+zstdx:10:T0"],
+            CompressionPreset::Experimental3 => vec![ "-i1","-m=xtool:o:t100p:g100p:mzlib:mpreflate:dd3+LOLZ_FAST"],
         }
     }
 }    
@@ -301,6 +323,10 @@ impl Default for MonCompresseurApp {
             ram_usage_mb: 0,
             ram_total_mb: 0,
             arc_pid: None,
+            compression_start_time: None,
+            elapsed_time: String::from("00:00:00"),
+            last_elapsed_time: None,
+            log_scroll_to_end: false,  // Initialize the new field
         }
     }
 }
@@ -491,23 +517,32 @@ impl MonCompresseurApp {
                     let stdout_reader = std::io::BufReader::new(stdout);
                     let stderr_reader = std::io::BufReader::new(stderr);
 
-                    // Lire stdout
-                    for line in stdout_reader.lines() {
-                        if let Ok(line) = line {
-                            println!("{}", line);
-                            tx.send(CommandUpdate::LogOutput(line)).ok();
-                            ctx_clone.request_repaint();
+                    // Ajout: lire stdout et stderr en parallèle pour logs temps réel
+                    let tx_clone = tx.clone();
+                    let ctx_clone2 = ctx_clone.clone();
+                    let stdout_handle = std::thread::spawn(move || {
+                        for line in stdout_reader.lines() {
+                            if let Ok(line) = line {
+                                tx_clone.send(CommandUpdate::LogOutput(format!("[stdout] {}", line))).ok();
+                                ctx_clone2.request_repaint();
+                            }
                         }
-                    }
+                    });
 
-                    // Lire stderr
-                    for line in stderr_reader.lines() {
-                        if let Ok(line) = line {
-                            eprintln!("{}", line);
-                            tx.send(CommandUpdate::LogOutput(line)).ok();
-                            ctx_clone.request_repaint();
+                    let tx_clone = tx.clone();
+                    let ctx_clone3 = ctx_clone.clone();
+                    let stderr_handle = std::thread::spawn(move || {
+                        for line in stderr_reader.lines() {
+                            if let Ok(line) = line {
+                                tx_clone.send(CommandUpdate::LogOutput(format!("[stderr] {}", line))).ok();
+                                ctx_clone3.request_repaint();
+                            }
                         }
-                    }
+                    });
+
+                    // Attendre la fin des threads de logs
+                    let _ = stdout_handle.join();
+                    let _ = stderr_handle.join();
 
                     match child.wait() {
                         Ok(status) => {
@@ -530,7 +565,6 @@ impl MonCompresseurApp {
                             }
                         }
                         Err(e) => {
-                            eprintln!("Erreur lors de l'attente du processus : {}", e);
                             let notification = Notification {
                                 message: format!("Erreur: {}", e),
                                 level: NotificationLevel::Error,
@@ -541,7 +575,6 @@ impl MonCompresseurApp {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Erreur lors du lancement de la commande : {}", e);
                     let notification = Notification {
                         message: format!("Erreur: {}", e),
                         level: NotificationLevel::Error,
@@ -607,6 +640,11 @@ impl MonCompresseurApp {
                 cmd.arg("-sfx");
             }
 
+            // Démarre le compteur de temps
+            self.compression_start_time = Some(std::time::Instant::now());
+            self.elapsed_time = String::from("00:00:00");
+            self.is_processing = true;
+
             self.execute_command(cmd, "la compression", ctx);
         } else {
             // Mode extraction
@@ -649,6 +687,7 @@ impl MonCompresseurApp {
                 match update {
                     CommandUpdate::LogOutput(log) => {
                         self.log_lines.push(log);
+                        self.log_scroll_to_end = true; // Use self.
                     },
                     CommandUpdate::Progress(progress) => {
                         self.progress_value = progress;
@@ -661,6 +700,10 @@ impl MonCompresseurApp {
                                     level: NotificationLevel::Success,
                                     timestamp: std::time::Instant::now(),
                                 });
+                                self.is_processing = false;
+                                self.last_elapsed_time = Some(self.elapsed_time.clone());
+                                self.compression_start_time = None;
+                                self.log_scroll_to_end = true;
                             },
                             Err(message) => {
                                 self.notification = Some(Notification {
@@ -668,11 +711,30 @@ impl MonCompresseurApp {
                                     level: NotificationLevel::Error,
                                     timestamp: std::time::Instant::now(),
                                 });
+                                self.is_processing = false;
+                                self.last_elapsed_time = Some(self.elapsed_time.clone());
+                                self.compression_start_time = None;
+                                self.log_scroll_to_end = true;
                             }
                         }
                     }
                 }
             }
+        }
+
+        // Mise à jour du compteur de temps si compression en cours
+        if self.is_processing {
+            if let Some(start) = self.compression_start_time {
+                let elapsed = start.elapsed();
+                let h = elapsed.as_secs() / 3600;
+                let m = (elapsed.as_secs() % 3600) / 60;
+                let s = elapsed.as_secs() % 60;
+                self.elapsed_time = format!("{:02}:{:02}:{:02}", h, m, s);
+                ctx.request_repaint();
+            }
+        } else {
+            self.compression_start_time = None;
+            self.elapsed_time = String::from("00:00:00");
         }
 
         let mut style = (*ctx.style()).clone();
@@ -684,17 +746,21 @@ impl MonCompresseurApp {
         // Toolbar panel
         egui::TopBottomPanel::top("main_toolbar")
             .frame(Frame::default()
-                .fill(Color32::from_rgb(28, 29, 32))
+                .fill(Color32::from_rgb(24, 26, 32))
                 .outer_margin(10.0)
-                .corner_radius(8.0)
+                .corner_radius(12.0)
                 .shadow(Shadow {
                     offset: [0, 2],
-                    blur: 4,
-                    spread: 1,
-                    color: Color32::from_black_alpha(60),
+                    blur: 6,
+                    spread: 2,
+                    color: Color32::from_black_alpha(80),
                 }))
             .show(ctx, |ui| {
-                ui.horizontal_wrapped(|ui| {  // Changed to horizontal_wrapped
+                ui.horizontal_wrapped(|ui| {
+                    ui.add_space(8.0);
+                    ui.heading(RichText::new("🗜️ Stelarc").size(22.0).color(Color32::from_rgb(66, 133, 244)));
+                    ui.add_space(16.0);
+
                     // Navigation buttons group
                     ui.group(|ui| {
                         ui.horizontal(|ui| {
@@ -758,23 +824,23 @@ impl MonCompresseurApp {
         // File explorer panel
         egui::SidePanel::left("file_explorer")
             .resizable(true)
-            .min_width(250.0)
+            .min_width(260.0)
             .frame(Frame::default()
-                .fill(Color32::from_rgb(35, 36, 40))
-                .corner_radius(8.0)
+                .fill(Color32::from_rgb(40, 42, 48))
+                .corner_radius(10.0)
                 .outer_margin(10.0)
                 .shadow(Shadow {
                     offset: [2, 0],
-                    blur: 4,
-                    spread: 1,
-                    color: Color32::from_black_alpha(60),
+                    blur: 6,
+                    spread: 2,
+                    color: Color32::from_black_alpha(80),
                 }))
             .show(ctx, |ui| {
-                ui.add_space(8.0);
-                ui.heading(RichText::new("📁 Explorateur").size(20.0).strong());
-                ui.add_space(4.0);
-                ui.label(RichText::new(format!("📍 {}", self.current_dir.display())).size(14.0));
-                ui.add_space(8.0);
+                ui.add_space(10.0);
+                ui.heading(RichText::new("📁 Explorateur de fichiers").size(19.0).strong());
+                ui.add_space(6.0);
+                ui.label(RichText::new(format!("📍 {}", self.current_dir.display())).size(14.0).color(Color32::GRAY));
+                ui.add_space(10.0);
 
                 egui::ScrollArea::vertical()
                     .auto_shrink([false; 2])
@@ -786,22 +852,57 @@ impl MonCompresseurApp {
         // Central panel
         egui::CentralPanel::default()
             .frame(Frame::default()
-                .fill(Color32::from_rgb(35, 36, 40))
-                .corner_radius(8.0)
-                .outer_margin(10.0)
+                .fill(Color32::from_rgb(38, 40, 48))
+                .corner_radius(14.0)
+                .outer_margin(12.0)
                 .shadow(Shadow {
                     offset: [0, 2],
-                    blur: 4,
-                    spread: 1,
-                    color: Color32::from_black_alpha(60),
+                    blur: 8,
+                    spread: 2,
+                    color: Color32::from_black_alpha(100),
                 }))
             .show(ctx, |ui| {
-                ui.add_space(8.0);
+                ui.add_space(12.0);
+
+                // Affichage du compteur de temps pendant ET après la compression
+                if self.is_processing || self.last_elapsed_time.is_some() {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("⏱️ Temps écoulé :")
+                                .strong()
+                                .color(Color32::from_rgb(251, 188, 4))
+                                .size(17.0)
+                        );
+                        if self.is_processing {
+                            ui.label(
+                                RichText::new(&self.elapsed_time)
+                                    .size(19.0)
+                                    .color(Color32::from_rgb(66, 133, 244))
+                                    .strong()
+                            );
+                        } else if let Some(ref t) = self.last_elapsed_time {
+                            ui.label(
+                                RichText::new(t)
+                                    .size(19.0)
+                                    .color(Color32::from_rgb(52, 168, 83))
+                                    .strong()
+                            );
+                            ui.label(
+                                RichText::new(" (final)")
+                                    .size(14.0)
+                                    .color(Color32::from_rgb(180, 180, 180))
+                            );
+                        }
+                    });
+                    ui.add_space(10.0);
+                }
+
                 // Action buttons
                 ui.horizontal(|ui| {
                     if ui.add(egui::Button::new(RichText::new("📂 Parcourir...").size(16.0))
                         .fill(Color32::from_rgb(66, 133, 244))
-                        .min_size(egui::vec2(120.0, 32.0)))
+                        .min_size(egui::vec2(120.0, 36.0)))
+                        .on_hover_text("Choisir un dossier à compresser ou à explorer")
                         .clicked() {
                         if let Some(dir) = rfd::FileDialog::new()
                             .set_title("Sélectionner un dossier")
@@ -819,7 +920,8 @@ impl MonCompresseurApp {
 
                     if ui.add(egui::Button::new(RichText::new("💾 Destination...").size(16.0))
                         .fill(Color32::from_rgb(66, 133, 244))
-                        .min_size(egui::vec2(120.0, 32.0)))
+                        .min_size(egui::vec2(120.0, 36.0)))
+                        .on_hover_text("Définir le chemin de sortie de l'archive")
                         .clicked() {
                         if let Some(path) = rfd::FileDialog::new()
                             .set_title("Choisir la destination")
@@ -831,61 +933,81 @@ impl MonCompresseurApp {
                         }
                     }
 
-                    // vers la ? 	// Extension selector
-egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
-.selected_text(format!(".{}", self.output_path.extension()
-    .and_then(|e| e.to_str())
-    .unwrap_or("arc")))
-.show_ui(ui, |ui| {
-    let extensions = ["arc", "bin", "doi", "bbv", "pak", "sfx"];
-    for ext in extensions.iter() {
-        // Calculate the potential path *before* calling selectable_value
-        let target_path = self.output_path.with_extension(ext);
-
-        // Now call selectable_value, passing the pre-calculated path
-        // This doesn't require an immutable borrow of self.output_path inside the call
-        if ui.selectable_value(
-            &mut self.output_path, // Mutable borrow
-            target_path,           // The target value (a PathBuf)
-            format!(".{}", ext)    // The label to display
-        ).clicked() {
-            // The selectable_value function already updates self.output_path
-            // to target_path if it was clicked and different,
-            // so you don't need this line anymore:
-            // self.output_path = self.output_path.with_extension(ext);
-        }
-    }
-});
+                    egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
+                        .selected_text(format!(".{}", self.output_path.extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("arc")))
+                        .show_ui(ui, |ui| {
+                            let extensions = ["arc", "bin", "doi", "bbv", "pak", "sfx"];
+                            for ext in extensions.iter() {
+                                let target_path = self.output_path.with_extension(ext);
+                                if ui.selectable_value(
+                                    &mut self.output_path,
+                                    target_path,
+                                    format!(".{}", ext)
+                                ).clicked() {
+                                    // handled
+                                }
+                            }
+                        });
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(egui::Button::new(RichText::new("▶ Exécuter").size(16.0))
+                        if ui.add(egui::Button::new(RichText::new("▶ Exécuter").size(17.0))
                             .fill(Color32::from_rgb(52, 168, 83))
-                            .min_size(egui::vec2(120.0, 32.0)))
+                            .min_size(egui::vec2(130.0, 38.0)))
+                            .on_hover_text("Lancer la compression ou l'extraction")
                             .clicked() {
                             self.handle_action(ctx);
                         }
                     });
                 });
 
-                ui.add_space(16.0);
+                ui.add_space(18.0);
 
-                // Logs avec style moderne
-                ui.heading(RichText::new("📝 Logs").size(20.0).strong());
+                // Ajout: Affichage du processus en cours (commande, progression)
+                if self.is_processing {
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("⏳ Processus en cours :").strong().color(Color32::from_rgb(251, 188, 4)));
+                            ui.add(egui::ProgressBar::new(self.progress_value)
+                                .desired_width(200.0)
+                                .show_percentage());
+                        });
+                        // Affiche la dernière commande exécutée si possible
+                        if let Some(last_log) = self.log_lines.last() {
+                            ui.label(RichText::new(format!("Dernier log : {}", last_log)).color(Color32::GRAY));
+                        }
+                    });
+                    ui.add_space(10.0);
+                }
+
+                // Logs avec auto-scroll
+                ui.heading(RichText::new("📝 Journal d'activité").size(19.0).strong().color(Color32::from_rgb(66, 133, 244)));
                 ui.add_space(8.0);
+
+                // Ajout: ScrollArea avec auto-scroll
+                let log_id = ui.make_persistent_id("log_scroll_area");
                 egui::ScrollArea::vertical()
                     .auto_shrink([false; 2])
+                    .max_height(220.0)
+                    .id_salt(log_id)
                     .show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut self.log_lines.join("\n"))
-                                .desired_rows(12)
-                                .desired_width(f32::INFINITY)
-                                .font(egui::TextStyle::Monospace)
-                                .interactive(false)
-                        );
-                    });
+                        let joined = self.log_lines.join("\n");
+                        let mut log_str = joined.as_str();  // Make the binding mutable
+                        let text_edit = egui::TextEdit::multiline(&mut log_str)
+                            .desired_rows(10)
+                            .desired_width(f32::INFINITY)
+                            .font(egui::TextStyle::Monospace)
+                            .interactive(false)
+                            .text_color(Color32::from_rgb(200, 200, 200));
+                        let response = ui.add(text_edit);
 
-                // Progress bar
-                self.show_progress(ui);
+                        // Auto-scroll to bottom if new log
+                        if self.log_scroll_to_end {
+                            response.scroll_to_me(Some(egui::Align::BOTTOM));
+                            self.log_scroll_to_end = false;
+                        }
+                    });
 
                 // Notification
                 self.show_notification(ui);
@@ -895,12 +1017,12 @@ egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
         egui::TopBottomPanel::bottom("status_bar")
             .frame(Frame::default()
                 .fill(Color32::from_rgb(28, 29, 32))
-                .corner_radius(8.0)
+                .corner_radius(10.0)
                 .outer_margin(10.0))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(RichText::new("⚡ Mode:").strong());
+                        ui.label(RichText::new("⚡ Mode:").strong().color(Color32::from_rgb(251, 188, 4)));
                         ui.label(if self.mode_compress {"Compression"} else {"Extraction"});
                         ui.separator();
                         ui.label(RichText::new("📊 Sélection:").strong());
@@ -925,11 +1047,6 @@ egui::ComboBox::from_label(RichText::new("📑 Extension").size(16.0))
                 }
             }
         }
-    }
-
-    fn show_progress(&mut self, ui: &mut egui::Ui) {
-        ui.add(egui::ProgressBar::new(self.progress_value)
-            .text(format!("{:.1}%", self.progress_value * 100.0)));
     }
 
     fn show_notification(&mut self, ui: &mut egui::Ui) {
@@ -1251,7 +1368,7 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     eframe::run_native(
-        "stelarc V3.5-BETA",
+        "stelarc V3.7-stable",
         native_options,
         Box::new(|_creation_context| Ok(Box::new(MonCompresseurApp::default()))),
     )
